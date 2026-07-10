@@ -3,16 +3,29 @@ package modelo;
 import java.util.ArrayList;
 
 public class Zona {
+    private java.util.UUID id;
     private String nombre;
     private int capacidad;
     private int precio;
     private ArrayList<Entrada> entradas;
+    private int version; // Bloqueo Optimista (Optimistic Locking)
 
     public Zona(String nombre, int capacidad, int precio) {
+        this.id = java.util.UUID.randomUUID();
         this.nombre = nombre;
         this.capacidad = capacidad;
         this.precio = precio;
         this.entradas = new ArrayList<>();
+        this.version = 0;
+        generarEntradas();
+    }
+
+    public java.util.UUID getId() {
+        return id;
+    }
+
+    public int getVersion() {
+        return version;
     }
 
     public boolean generarEntradas() {
@@ -26,11 +39,22 @@ public class Zona {
         return result;
     }
 
+    public int getCantidadEntradasDisponibles() {
+        int disponibles = 0;
+        for (Entrada entrada : this.entradas) {
+            if (entrada.getEstado().equalsIgnoreCase("DISPONIBLE")) {
+                disponibles++;
+            }
+        }
+        return disponibles;
+    }
+
     public Entrada[] mostrarEntrada() {
         return this.entradas.toArray(new Entrada[0]);
     }
 
     public Entrada[] venderEntrada(int numero) {
+        this.version++; // Simula la modificación transaccional y el control de versión para bloqueo optimista
         Entrada[] result = null;
         ArrayList<Entrada> disponibles = new ArrayList<>();
         for (Entrada entrada : this.entradas) {

@@ -3,8 +3,8 @@ package modelo;
 public class Usuario extends Persona {
     private boolean estado;
 
-    public Usuario(String nombres, String apellidos, String dni, String contraseña) {
-        super(nombres, apellidos, dni, contraseña);
+    public Usuario(String nombres, String apellidos, String dni, String contraseña, String correo) {
+        super(nombres, apellidos, dni, contraseña, correo);
         this.estado = true;
     }
 
@@ -20,24 +20,6 @@ public class Usuario extends Persona {
         return estado;
     }
 
-    @Override
-    public boolean registrarTarjeta(Tarjeta tarjeta) {
-        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
-    }
 
-    @Override
-    public boolean eliminarTarjeta() {
-        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
-    }
-
-    @Override
-    public boolean anularVenta(Venta venta) {
-        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
-    }
-
-    @Override
-    public boolean comprar(Zona zona, int cantidad) {
-        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
-    }
 
 }

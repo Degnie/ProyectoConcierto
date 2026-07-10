@@ -27,17 +27,85 @@ public class DlgEditarZona extends javax.swing.JDialog {
     // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
     private void initComponents() {
 
+        jLabel1 = new javax.swing.JLabel();
+        jLabel2 = new javax.swing.JLabel();
+        jLabel3 = new javax.swing.JLabel();
+        jLabel4 = new javax.swing.JLabel();
+        btnGuardarEdicion = new javax.swing.JButton();
+        btnCancelarEdicion = new javax.swing.JButton();
+        txtZonaNombre = new javax.swing.JTextField();
+        txtZonaPrecio = new javax.swing.JTextField();
+        txtZonaCapacidad = new javax.swing.JTextField();
+
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
+
+        jLabel1.setText("Modificar Datos de la Zona");
+
+        jLabel2.setText("Nombre de la Zona:");
+
+        jLabel3.setText("Precio:");
+
+        jLabel4.setText("Capacidad:");
+
+        btnGuardarEdicion.setText("Actualizar");
+
+        btnCancelarEdicion.setText("Cancelar");
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 400, Short.MAX_VALUE)
+            .addGroup(layout.createSequentialGroup()
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addGroup(layout.createSequentialGroup()
+                        .addGap(123, 123, 123)
+                        .addComponent(jLabel1))
+                    .addGroup(layout.createSequentialGroup()
+                        .addGap(67, 67, 67)
+                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                                .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
+                                    .addComponent(jLabel2)
+                                    .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED))
+                                .addGroup(layout.createSequentialGroup()
+                                    .addComponent(jLabel3)
+                                    .addGap(81, 81, 81)))
+                            .addGroup(layout.createSequentialGroup()
+                                .addComponent(jLabel4)
+                                .addGap(58, 58, 58)))
+                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
+                            .addComponent(txtZonaCapacidad, javax.swing.GroupLayout.DEFAULT_SIZE, 121, Short.MAX_VALUE)
+                            .addComponent(txtZonaPrecio, javax.swing.GroupLayout.DEFAULT_SIZE, 121, Short.MAX_VALUE)
+                            .addComponent(txtZonaNombre)))
+                    .addGroup(layout.createSequentialGroup()
+                        .addGap(110, 110, 110)
+                        .addComponent(btnGuardarEdicion)
+                        .addGap(60, 60, 60)
+                        .addComponent(btnCancelarEdicion)))
+                .addContainerGap(41, Short.MAX_VALUE))
         );
         layout.setVerticalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 300, Short.MAX_VALUE)
+            .addGroup(layout.createSequentialGroup()
+                .addGap(31, 31, 31)
+                .addComponent(jLabel1)
+                .addGap(27, 27, 27)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(jLabel2)
+                    .addComponent(txtZonaNombre, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addGap(18, 18, 18)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(jLabel3)
+                    .addComponent(txtZonaPrecio, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addGap(18, 18, 18)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(jLabel4)
+                    .addComponent(txtZonaCapacidad, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addGap(18, 18, 18)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(btnGuardarEdicion)
+                    .addComponent(btnCancelarEdicion))
+                .addContainerGap(27, Short.MAX_VALUE))
         );
 
         pack();
@@ -86,5 +154,27 @@ public class DlgEditarZona extends javax.swing.JDialog {
     }
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
+    private javax.swing.JButton btnCancelarEdicion;
+    private javax.swing.JButton btnGuardarEdicion;
+    private javax.swing.JLabel jLabel1;
+    private javax.swing.JLabel jLabel2;
+    private javax.swing.JLabel jLabel3;
+    private javax.swing.JLabel jLabel4;
+    private javax.swing.JTextField txtZonaCapacidad;
+    private javax.swing.JTextField txtZonaNombre;
+    private javax.swing.JTextField txtZonaPrecio;
     // End of variables declaration//GEN-END:variables
+// ======== MÉTODOS GETTER Y SETTER PARA EL CONTROLADOR ========
+public void setNombreZona(String nom) { txtZonaNombre.setText(nom); }
+public void setPrecioZona(String pre) { txtZonaPrecio.setText(pre); }
+public void setCapacidadZona(String cap) { txtZonaCapacidad.setText(cap); }
+
+// Métodos Getter para recuperar los datos editados por el usuario
+public String getNombreZona() { return txtZonaNombre.getText().trim(); }
+public String getPrecioZona() { return txtZonaPrecio.getText().trim(); }
+public String getCapacidadZona() { return txtZonaCapacidad.getText().trim(); }
+
+// Getters de los botones del diálogo modal
+public javax.swing.JButton getBtnGuardarEdicion() { return btnGuardarEdicion; }
+public javax.swing.JButton getBtnCancelarEdicion() { return btnCancelarEdicion; }
 }
