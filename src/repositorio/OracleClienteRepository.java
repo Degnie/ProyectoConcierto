@@ -14,9 +14,14 @@ public class OracleClienteRepository implements ClienteRepository {
     @Override
     public boolean save(Cliente cliente) {
         if (cliente == null) return false;
+        // La cláusula WHERE tras el UPDATE SET es la guarda de seguridad: si el DNI ya existe pero
+        // pertenece a un ADMIN, la fila queda fuera tanto del UPDATE (falla el WHERE) como del
+        // INSERT (ya hizo match por DNI), así que no se toca y executeUpdate() devuelve 0 filas.
+        // Sin esto, un registro de cliente con el DNI de un admin sobrescribiría su hash/salt.
         String sql = "MERGE INTO usuarios u USING (SELECT ? dni FROM dual) src ON (u.dni = src.dni) "
                 + "WHEN MATCHED THEN UPDATE SET nombres = ?, apellidos = ?, correo = ?, "
                 + "contrasena_hash = ?, salt = ?, puntos = ? "
+                + "WHERE u.rol = 'CLIENTE' "
                 + "WHEN NOT MATCHED THEN INSERT (dni, nombres, apellidos, correo, contrasena_hash, salt, rol, puntos) "
                 + "VALUES (?, ?, ?, ?, ?, ?, 'CLIENTE', ?)";
         try (Connection con = DatabaseConnection.getInstance().getConnection();

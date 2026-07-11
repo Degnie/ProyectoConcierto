@@ -13,6 +13,7 @@ import modelo.Persona;
 import repositorio.ClienteRepository;
 import repositorio.ConciertoRepository;
 import repositorio.UsuarioRepository;
+import util.RegistradorErrores;
 import vista.FrmAdministrador;
 import vista.FrmCliente;
 import vista.FrmLogin;
@@ -73,12 +74,18 @@ public class ControladorLogin implements ActionListener {
         new SwingWorker<Cliente, Void>() {
             @Override
             protected Cliente doInBackground() {
-                Cliente encontrado = clienteRepository.findByDni(dni);
-                if (encontrado == null) {
+                // try/finally: la purga del arreglo en claro es incondicional. Si findByDni()
+                // lanza (caída de conexión, timeout JDBC) o ingresar() lanza algo inesperado, la
+                // contraseña igual se sobrescribe antes de que el hilo termine.
+                try {
+                    Cliente encontrado = clienteRepository.findByDni(dni);
+                    if (encontrado == null) {
+                        return null;
+                    }
+                    return encontrado.ingresar(dni, contrasena) ? encontrado : null;
+                } finally {
                     Arrays.fill(contrasena, '0');
-                    return null;
                 }
-                return encontrado.ingresar(dni, contrasena) ? encontrado : null;
             }
 
             @Override
@@ -101,6 +108,7 @@ public class ControladorLogin implements ActionListener {
                 try {
                     return get();
                 } catch (Exception ex) {
+                    RegistradorErrores.registrar("ControladorLogin.loginCliente", ex);
                     JOptionPane.showMessageDialog(vista, "Error al validar credenciales: " + ex.getMessage());
                     return null;
                 }
@@ -114,16 +122,18 @@ public class ControladorLogin implements ActionListener {
         new SwingWorker<Boolean, Void>() {
             @Override
             protected Boolean doInBackground() {
-                CredencialAdmin credencial = usuarioRepository.buscarAdminPorDni(dni);
-                if (credencial == null) {
+                try {
+                    CredencialAdmin credencial = usuarioRepository.buscarAdminPorDni(dni);
+                    if (credencial == null) {
+                        return false;
+                    }
+                    String hashIngresado = Persona.hashPassword(contrasena, credencial.getSalt());
+                    return hashIngresado.equals(credencial.getContrasenaHash());
+                } finally {
+                    // Incondicional: corre tanto si el flujo anterior devuelve normalmente como
+                    // si buscarAdminPorDni()/hashPassword() lanzan una excepción.
                     Arrays.fill(contrasena, '0');
-                    return false;
                 }
-                // Purga inmediata tras hashear, dentro del mismo hilo de background: la
-                // contraseña en claro no debe sobrevivir hasta el done() en el EDT.
-                String hashIngresado = Persona.hashPassword(contrasena, credencial.getSalt());
-                Arrays.fill(contrasena, '0');
-                return hashIngresado.equals(credencial.getContrasenaHash());
             }
 
             @Override
@@ -146,6 +156,7 @@ public class ControladorLogin implements ActionListener {
                 try {
                     return get();
                 } catch (Exception ex) {
+                    RegistradorErrores.registrar("ControladorLogin.loginAdmin", ex);
                     JOptionPane.showMessageDialog(vista, "Error al validar credenciales: " + ex.getMessage());
                     return false;
                 }

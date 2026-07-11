@@ -1,5 +1,47 @@
 # Changelog
 
+## [Sin publicar] - 2026-07-11 (iteración 3: integridad de datos, orden de flujo y hardening)
+
+Auditoría posterior a la iteración 2, sobre el código ya con Oracle y SMTP real en producción de
+prueba. Corrige un problema de integridad de datos real (verificado contra la base), reordena el
+flujo de registro para no gastar cuota SMTP en vano, y blinda la purga de contraseñas ante fallos
+inesperados.
+
+### Cambios implementados
+
+**Integridad de datos — colisión de roles en el MERGE (`OracleClienteRepository.java`)**
+- El `MERGE` de `save(Cliente)` no distinguía el rol de la fila existente: si alguien intentaba registrarse (o el flujo de "actualizar cliente" corría) con un DNI que ya pertenecía a un `ADMIN`, el `WHEN MATCHED` sobrescribía `nombres`/`apellidos`/`correo`/`contrasena_hash`/`salt`/`puntos` de esa cuenta administrativa con los datos del cliente — efectivamente secuestrando el login del admin.
+- Se agregó `WHERE u.rol = 'CLIENTE'` a la cláusula `UPDATE SET` del `MERGE`. Si el DNI matchea una fila `ADMIN`, esa fila queda fuera tanto del `UPDATE` (falla el `WHERE`) como del `INSERT` (ya hizo match), así que no se toca y `executeUpdate()` devuelve 0 filas → `save()` retorna `false`.
+- Verificado directamente contra Oracle: un intento de `MERGE` con `dni='admin'` y datos falsos afectó **0 filas fusionadas** y el admin quedó con `nombres='Admin'`, `rol='ADMIN'` intactos; el camino legítimo (cliente existente actualizando sus propios datos) siguió afectando 1 fila con normalidad. Se repitió la prueba a través de la clase Java real (`OracleClienteRepository.save(...)`, no solo SQL crudo) con el mismo resultado.
+
+**Orden del flujo de registro (`ControladorRegistro.java`)**
+- Se agregó una **Fase 0** (`iniciarFaseVerificacionDni`): un `SwingWorker` que consulta `clienteRepository.findByDni(dni)` en segundo plano *antes* de siquiera construir `EmailService` o generar el código OTP. Si el DNI ya existe, el flujo aborta ahí mismo con un mensaje en el EDT — ya no se envía un correo real por un registro que de todos modos iba a fallar en la fase de persistencia.
+- La verificación de unicidad de DNI en la Fase 2 (persistencia) se mantiene como defensa en profundidad, no se eliminó: cubre la condición de carrera de que otro cliente se registre con el mismo DNI mientras el primero está completando el código de verificación.
+
+**Purga de contraseñas blindada ante excepciones (`ControladorLogin.java`, `ControladorRegistro.java`)**
+- Todo bloque que lee `char[]` de `JPasswordField.getPassword()` y lo usa para hashear ahora envuelve esa lectura en `try { ... } finally { Arrays.fill(contrasena, '0'); }`. Antes, la purga estaba en el camino feliz (o dispersa en ramas `if`); una excepción no prevista en medio (caída de conexión JDBC, timeout, error de formato) podía saltarse la limpieza y dejar la contraseña en claro viva en el heap más tiempo del necesario.
+- Aplica a `ControladorLogin.loginCliente`/`loginAdmin` y a `ControladorRegistro.iniciarFasePersistencia` (esta última ya purgaba "inmediatamente después de hashear" desde la iteración 2; ahora esa purga está garantizada también si `Persona.hashPassword(...)` lanza).
+
+**Trazabilidad operativa (`util/RegistradorErrores.java`, nuevo)**
+- Clase utilitaria mínima con un único método estático `registrar(String contexto, Throwable ex)`: imprime a `System.err` (mensaje + stack trace). Se invoca desde todos los bloques `catch (Exception ex)` de los `SwingWorker` en `ControladorLogin` y `ControladorRegistro`, antes de mostrar el `JOptionPane` al usuario. No reemplaza el diálogo — lo complementa, para que los fallos queden en el log del proceso y no dependan de que alguien haya visto la ventana emergente en el momento exacto del error.
+
+**Mitigación de fugas por acumulación en el `CardLayout` (`FrmPrincipal.java`)**
+- La versión anterior ya removía la card anterior antes de agregar la nueva, pero lo hacía escaneando `panelContenedor.getComponents()` en busca de un componente cuyo `getName()` coincidiera — funcionalmente correcto, pero fràgil (dependía de que ningún otro componente compartiera accidentalmente ese `name()`, y no dejaba explícito en el código qué instancia se estaba reemplazando).
+- Se reemplazó por dos campos explícitos, `cardClienteActual`/`cardAdminActual`, que guardan la referencia directa al panel montado. `mostrarCliente(...)`/`mostrarAdministrador(...)` remueven esa referencia (si existía) antes de montar la nueva — sin escaneo, sin ambigüedad.
+- Verificado con una prueba automatizada: 3 logins de cliente consecutivos dejan exactamente 1 card de cliente en el contenedor (no 3); ídem para administrador.
+
+**Suavizado de feedback visual (`ControladorRegistro.java`)**
+- El botón "Registrar" se sigue habilitando/deshabilitando en vivo con cada tecla (sin cambios ahí), pero los `DocumentListener` ya no llaman a `setErrorXxx(...)` directamente — se separó la validación en métodos puros por campo (`errorDni()`, `errorContrasena()`, `errorFecha()`, `errorCorreo()`, `errorApellidos()`) que **calculan** el mensaje sin tocar la UI.
+- Los `JLabel` rojos ahora solo se pintan en dos momentos: (a) cuando el campo pierde el foco (`FocusListener.focusLost`), vía un listener compartido que revela el error de ese campo puntual; (b) al intentar enviar el formulario estando inválido (clic en "Registrar" — inalcanzable si está deshabilitado, cubierto igual por defensividad — o Enter en el campo de contraseña con el formulario inválido, que revela todos los errores a la vez).
+- Ya no se marca "error de formato" mientras el usuario todavía está completando un campo dígito a dígito.
+
+### Recomendaciones de arquitectura evaluadas y descartadas en esta sesión
+
+- **Pool de conexiones (HikariCP o similar)**: se evaluó para reemplazar `DriverManager.getConnection()` por conexión bajo demanda en `DatabaseConnection`, pero se descartó explícitamente por instrucción del profesor: el entorno debe permanecer JDBC manual puro, sin dependencias de terceros para pooling. Cada repositorio sigue abriendo y cerrando su propia conexión en `try-with-resources`.
+- **ORM (Hibernate/JPA)**: se descartó por la misma razón — el alcance académico pedido es control manual y directo sobre `PreparedStatement`, no mapeo objeto-relacional declarativo. Los repositorios `Oracle*Repository` siguen siendo SQL escrito a mano.
+- **Reconstrucción de `FrmRegistroCliente` en el editor visual de NetBeans** para agregar los `FocusListener`: se mantuvo el enfoque de código Java plano ya establecido en la iteración 1 — los listeners se agregan enteramente desde `ControladorRegistro` usando los getters públicos de la vista (`getTxtDni()`, etc.), sin tocar `initComponents()` ni el archivo `.form`. Cero riesgo de desincronizar el diseñador todavía más.
+- **Mover la verificación de unicidad de DNI a una restricción `UNIQUE`/`PRIMARY KEY` a nivel de base de datos como único mecanismo** (en vez de la consulta explícita `findByDni` en la Fase 0): la tabla `usuarios` ya tiene `dni` como `PRIMARY KEY`, así que esa garantía ya existe a nivel de esquema como red de seguridad final. La Fase 0 se mantiene además porque el objetivo específico de esta tarea no es solo *evitar* el duplicado sino *evitar el envío de correo* cuando se sabe de antemano que va a fallar — algo que una constraint de base de datos no puede prevenir por sí sola.
+
 ## [Sin publicar] - 2026-07-10 (iteración 2: SMTP real, rutas de despliegue, UX asíncrona)
 
 Esta iteración retoma dos puntos que la entrega anterior había dejado pospuestos explícitamente

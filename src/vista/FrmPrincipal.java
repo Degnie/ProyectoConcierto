@@ -21,6 +21,13 @@ public class FrmPrincipal extends JFrame {
     private final FrmLogin vistaLogin;
     private final FrmRegistroCliente vistaRegistro;
 
+    // Referencia explícita a la card de sesión actualmente montada (cliente o admin). Se recrea
+    // en cada login, así que hay que soltar la anterior a mano antes de montar la nueva: de lo
+    // contrario el panel viejo (y su controlador, y los listeners que registró) queda huérfano
+    // pero alcanzable desde el árbol de Swing, y nunca se libera.
+    private JPanel cardClienteActual;
+    private JPanel cardAdminActual;
+
     public FrmPrincipal() {
         setTitle("Sistema de Entradas");
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
@@ -61,22 +68,23 @@ public class FrmPrincipal extends JFrame {
     // FrmCliente/FrmAdministrador se recrean en cada login (llevan estado de sesión),
     // así que reemplazamos la card anterior por la nueva antes de mostrarla.
     public void mostrarCliente(FrmCliente panel) {
-        reemplazarCard(CARD_CLIENTE, panel);
+        cardClienteActual = reemplazarCard(CARD_CLIENTE, cardClienteActual, panel);
     }
 
     public void mostrarAdministrador(FrmAdministrador panel) {
-        reemplazarCard(CARD_ADMIN, panel);
+        cardAdminActual = reemplazarCard(CARD_ADMIN, cardAdminActual, panel);
     }
 
-    private void reemplazarCard(String nombre, JPanel panel) {
-        for (Component c : panelContenedor.getComponents()) {
-            if (nombre.equals(c.getName())) {
-                panelContenedor.remove(c);
-                break;
-            }
+    // Elimina explícitamente el panel anterior (si había uno) del contenedor antes de acoplar el
+    // nuevo, en vez de barrer panelContenedor.getComponents() buscando por nombre: la referencia
+    // directa es inequívoca y no depende de que ningún otro componente comparta el mismo name().
+    private JPanel reemplazarCard(String nombre, JPanel anterior, JPanel nuevo) {
+        if (anterior != null) {
+            panelContenedor.remove(anterior);
         }
-        agregarCard(nombre, panel);
+        agregarCard(nombre, nuevo);
         cardLayout.show(panelContenedor, nombre);
+        return nuevo;
     }
 
     private void agregarCard(String nombre, JPanel panel) {
