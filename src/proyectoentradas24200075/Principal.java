@@ -35,6 +35,14 @@ public class Principal {
     public static VentaRepository ventaRepository = new OracleVentaRepository();
 
     public static void main(String[] args) {
+        // Entorno headless (CI, servidor sin X/RDP, tarea programada): ni la validación con
+        // JOptionPane ni el Swing UI pueden mostrarse, así que se evita levantarlos por completo
+        // en vez de reventar con un HeadlessException a mitad de arranque.
+        if (java.awt.GraphicsEnvironment.isHeadless()) {
+            System.err.println("Entorno headless detectado: la interfaz gráfica no puede iniciarse.");
+            return;
+        }
+
         // Fail-fast: si falta config.properties o alguna clave crítica, se avisa y se aborta acá
         // mismo, antes de intentar levantar la UI o abrir una conexión JDBC que fallaría más
         // adelante con un stacktrace menos claro para quien esté instalando el sistema.

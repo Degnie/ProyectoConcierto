@@ -1,5 +1,45 @@
 # Changelog
 
+## [Sin publicar] - 2026-07-11 (iteración 8: Afinamiento algorítmico, concurrencia y sincronización de memoria)
+
+Cierra tres fugas de eficiencia/consistencia que quedaban de la iteración 7: un `O(N*tamañoZona)`
+silencioso al hidratar historiales largos, un bloqueo pesimista (`FOR UPDATE`) que serializaba
+compras de zonas distintas sin necesidad, y una UI de checkout que podía quedar desincronizada de
+Oracle si la persistencia fallaba después de que `comprar()` ya había reservado en memoria.
+
+### Cambios implementados
+
+**Historial O(N) en vez de O(N\*tamañoZona) (`OracleVentaRepository.cargarHistorialPorCliente`)**
+- `buscarEntradaEnZona` recorría linealmente `zona.getEntradas()` por cada fila del `JOIN` (una por entrada del historial). Se reemplazó por `indexarEntradasPorNumero(Zona)`, que arma un `Map<Integer, Entrada>` una sola vez por zona (cacheado en un `Map<Zona, Map<Integer, Entrada>>` local, vía `computeIfAbsent`), y cada fila hace una búsqueda `O(1)` en ese índice. Clientes con historiales largos ya no bloquean el hilo de background proporcionalmente al tamaño de la zona.
+
+**Concurrencia optimista pura (`OracleVentaRepository.guardarCompraCompleta`)**
+- Se eliminó el `SELECT ... FOR UPDATE` (bloqueo pesimista de fila). La lectura de `zonas.version` ahora es un `SELECT` estándar; la protección contra sobreventa sigue siendo real porque el `UPDATE zonas SET version = version + 1 WHERE id = ? AND version = ?` sigue siendo atómico y condicionado — si otra transacción ganó la carrera, el `UPDATE` afecta 0 filas y se aborta como conflicto, igual que antes. La diferencia es que compradores de zonas *distintas* ya no esperan un lock de fila que nunca necesitaron.
+
+**Sanitización de excepciones de BD (todos los `Oracle*Repository`)**
+- Todo `catch (SQLException e)` en `OracleVentaRepository`, `OracleClienteRepository`, `OracleUsuarioRepository` y `OracleConciertoRepository` ahora hace `RegistradorErrores.registrar(contexto, e)` (con el detalle real: tabla, constraint, mensaje de Oracle) y lanza hacia el llamador un `new RuntimeException("El servicio no pudo procesar la transacción.")` genérico. El detalle interno queda en el log físico, no en el `JOptionPane` que ve el usuario final.
+
+**Transacción compensatoria en RAM (`ControladorCliente.procesarCompraEntrada`)**
+- `guardarEnSegundoPlano` ganó una variante con un cuarto parámetro `alFallar`, que corre antes del diálogo de error si `guardarCompraCompleta` falla. Para la compra, `alFallar` invoca `clienteLogueado.anularVenta(ventaCreada)` y refresca puntos/tablas — así una venta que `comprar()` ya aplicó optimistamente en memoria (puntos descontados, entradas reservadas) pero que Oracle nunca confirmó, se deshace en el cliente en vez de dejar la UI mostrando un estado que la BD no respalda.
+
+**Cortafuegos visual anti doble clic (`ControladorCliente`/`FrmPrincipal`)**
+- `guardarEnSegundoPlano` ahora llama `principal.iniciarCarga()` antes de lanzar el `SwingWorker` y `principal.finalizarCarga()` al inicio de `done()` (éxito o fallo), reutilizando el mecanismo ya existente en `FrmPrincipal` (usado por `ControladorRegistro`) que deshabilita la ventana y restaura el cursor. Cubre tanto compra como liberación de entrada, ya que ambas pasan por el mismo método compartido.
+
+**Protección headless (`Principal.main`)**
+- `main` ahora corta al inicio con `if (java.awt.GraphicsEnvironment.isHeadless())`, antes de intentar `validarConfiguracion()` (que ya mostraba un `JOptionPane`) o levantar cualquier componente Swing. En un entorno sin display (CI, tarea programada, servidor sin escritorio), la app termina con un mensaje por `System.err` en vez de reventar con `HeadlessException`.
+
+**Ruta de log estable (`util/RegistradorErrores.java`, `conexion/ConfiguracionApp.java`)**
+- `errores_app.log` dependía del directorio de trabajo (cwd) del proceso, volátil según cómo se lance el ejecutable en Windows (acceso directo, tarea programada, doble clic). Se agregó `ConfiguracionApp.resolverArchivoParaEscritura(String)` — a diferencia de `resolverArchivo` (que cae al cwd si el archivo aún no existe, pensado para `config.properties` que ya debe existir), esta variante siempre apunta junto al `.jar` en ejecución, sea que el archivo exista o se vaya a crear ahí mismo. `RegistradorErrores` la usa para ubicar el log.
+
+### Verificación
+
+- Compilación completa del proyecto sin errores (`javac` con el classpath de `nbproject/project.properties`: ojdbc11, jakarta.mail-api, angus-mail, jakarta.activation-api).
+- Lectura manual de los cuatro flujos de `OracleVentaRepository` confirmando que cada `catch (SQLException)` pasa por `RegistradorErrores.registrar` antes de lanzar el mensaje genérico, y que el `UPDATE ... WHERE id = ? AND version = ?` sigue siendo la única fuente real de exclusión mutua tras quitar el `FOR UPDATE`.
+
+### Recomendaciones rechazadas en esta sesión
+
+- **Unit of Work / `TransactionManager` genérico** para centralizar `setAutoCommit`/`commit`/`rollback` entre repositorios: rechazado a favor de mantener el `try/catch` explícito dentro de cada método de cada `Oracle*Repository`. Con cuatro repositorios y transacciones de forma ya simple (abrir, commit, rollback en el catch), una abstracción de coordinación general es una capa de indirección para un problema que el `try-with-resources` + `try/catch` actual ya resuelve sin ambigüedad sobre qué conexión/transacción está activa en cada momento.
+- **DTOs tácticos** para separar la capa de persistencia del modelo de dominio rico: rechazado por sobreingeniería para el alcance actual del proyecto. Se prefiere seguir leyendo/escribiendo `Cliente`, `Venta`, `Zona` directamente desde los repositorios; introducir DTOs solo tendría sentido si el modelo de dominio y el modelo de persistencia necesitaran divergir, lo cual no es el caso hoy.
+
 ## [Sin publicar] - 2026-07-11 (iteración 7: transacciones ACID, N+1 y SPA sin modales)
 
 Elimina la persistencia híbrida: hasta esta iteración, `Cliente.ventas` solo vivía en memoria por

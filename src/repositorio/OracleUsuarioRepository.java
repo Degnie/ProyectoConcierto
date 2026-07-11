@@ -6,6 +6,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import modelo.CredencialAdmin;
+import util.RegistradorErrores;
 
 public class OracleUsuarioRepository implements UsuarioRepository {
     private static final int TIMEOUT_SEGUNDOS = 10;
@@ -25,7 +26,8 @@ public class OracleUsuarioRepository implements UsuarioRepository {
                 return null;
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Error al buscar administrador en la base de datos", e);
+            RegistradorErrores.registrar("OracleUsuarioRepository.buscarAdminPorDni", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 }

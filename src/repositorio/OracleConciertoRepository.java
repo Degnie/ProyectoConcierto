@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 import modelo.Concierto;
 import modelo.Zona;
+import util.RegistradorErrores;
 
 public class OracleConciertoRepository implements ConciertoRepository {
     private static final int TIMEOUT_SEGUNDOS = 10;
@@ -63,10 +64,12 @@ public class OracleConciertoRepository implements ConciertoRepository {
                 return true;
             } catch (SQLException e) {
                 con.rollback();
-                throw e;
+                RegistradorErrores.registrar("OracleConciertoRepository.save", e);
+                throw new RuntimeException("El servicio no pudo procesar la transacción.");
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Error al guardar concierto en la base de datos", e);
+            RegistradorErrores.registrar("OracleConciertoRepository.save", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 
@@ -130,7 +133,8 @@ public class OracleConciertoRepository implements ConciertoRepository {
             }
             return resultado;
         } catch (SQLException e) {
-            throw new RuntimeException("Error al listar conciertos de la base de datos", e);
+            RegistradorErrores.registrar("OracleConciertoRepository.findAll", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 
@@ -143,7 +147,8 @@ public class OracleConciertoRepository implements ConciertoRepository {
             ps.setString(1, id.toString());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            throw new RuntimeException("Error al eliminar concierto de la base de datos", e);
+            RegistradorErrores.registrar("OracleConciertoRepository.delete", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 }

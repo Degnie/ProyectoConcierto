@@ -182,7 +182,17 @@ public class ControladorCliente implements ActionListener {
 
     // Toda escritura a la BD corre fuera del EDT para no congelar la UI; los errores de la
     // transacción quedan registrados (System.err + error.log) además del diálogo al usuario.
+    // iniciarCarga()/finalizarCarga() envuelven todo el ciclo (cursor de espera + botones
+    // deshabilitados) para mitigar el doble clic mientras la operación está en vuelo.
     private void guardarEnSegundoPlano(String contexto, Runnable trabajoDeBd, Runnable alTerminar) {
+        guardarEnSegundoPlano(contexto, trabajoDeBd, alTerminar, null);
+    }
+
+    // Variante con compensación: si trabajoDeBd falla, alFallar corre antes del diálogo de error,
+    // para deshacer en memoria (ej. puntos de fidelidad) lo que comprar() ya había aplicado
+    // optimistamente y que Oracle nunca llegó a persistir.
+    private void guardarEnSegundoPlano(String contexto, Runnable trabajoDeBd, Runnable alTerminar, Runnable alFallar) {
+        principal.iniciarCarga();
         new SwingWorker<Void, Void>() {
             private Exception fallo;
 
@@ -198,8 +208,10 @@ public class ControladorCliente implements ActionListener {
 
             @Override
             protected void done() {
+                principal.finalizarCarga();
                 if (fallo != null) {
                     RegistradorErrores.registrar(contexto, fallo);
+                    if (alFallar != null) alFallar.run();
                     JOptionPane.showMessageDialog(vista, "Ocurrió un error al guardar en la base de datos: " + fallo.getMessage());
                     return;
                 }
@@ -320,6 +332,15 @@ public class ControladorCliente implements ActionListener {
                 () -> ventaRepository.guardarCompraCompleta(clienteLogueado, conciertoSel, ventaCreada),
                 () -> {
                     JOptionPane.showMessageDialog(vista, "¡Compra efectuada con éxito!");
+                    vista.setPuntosAcumulados(clienteLogueado.getPuntos());
+                    actualizarTablaZonas();
+                    actualizarTablaCompras();
+                },
+                // Compensación en RAM: comprar() ya descontó puntos y reservó entradas en la Zona
+                // compartida antes de intentar persistir. Si Oracle no confirmó la venta, anularla
+                // en memoria evita que la UI (puntos, disponibilidad) quede desincronizada de la BD.
+                () -> {
+                    clienteLogueado.anularVenta(ventaCreada);
                     vista.setPuntosAcumulados(clienteLogueado.getPuntos());
                     actualizarTablaZonas();
                     actualizarTablaCompras();

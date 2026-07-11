@@ -16,6 +16,7 @@ import modelo.Concierto;
 import modelo.Entrada;
 import modelo.Venta;
 import modelo.Zona;
+import util.RegistradorErrores;
 
 public class OracleVentaRepository implements VentaRepository {
     private static final int TIMEOUT_SEGUNDOS = 10;
@@ -25,7 +26,7 @@ public class OracleVentaRepository implements VentaRepository {
         if (cliente == null || concierto == null || venta == null) return false;
         String idZona = venta.getZona().getId().toString();
 
-        String sqlSelectVersion = "SELECT version FROM zonas WHERE id = ? FOR UPDATE";
+        String sqlSelectVersion = "SELECT version FROM zonas WHERE id = ?";
         String sqlUpdateZonaVersion = "UPDATE zonas SET version = version + 1 WHERE id = ? AND version = ?";
         String sqlInsertVenta = "INSERT INTO ventas "
                 + "(id_venta, dni_cliente, id_concierto, id_zona, fecha_hora, monto_neto, puntos_redimidos, puntos_ganados, estado, payment_txn_id) "
@@ -36,12 +37,14 @@ public class OracleVentaRepository implements VentaRepository {
         try (Connection con = DatabaseConnection.getInstance().getConnection()) {
             con.setAutoCommit(false);
             try {
-                // 1. Bloqueo optimista real en BD: se lee la versión bajo lock de fila (FOR UPDATE)
-                // y se actualiza condicionada a que nadie la haya cambiado entretanto. Si otra
-                // transacción concurrente ya vendió el último cupo, el UPDATE afecta 0 filas y se
-                // aborta como conflicto — la sobreventa queda cortada acá, no solo por el
-                // "synchronized" en memoria de Zona (que no protege contra una segunda instancia
-                // de la app apuntando a la misma base).
+                // Concurrencia optimista pura: se lee la versión sin lock de fila y se actualiza
+                // condicionada a que nadie la haya cambiado entretanto. Si otra transacción
+                // concurrente ya vendió el último cupo, el UPDATE afecta 0 filas y se aborta como
+                // conflicto — la sobreventa queda cortada acá, no solo por el "synchronized" en
+                // memoria de Zona (que no protege contra una segunda instancia de la app apuntando
+                // a la misma base). Sin FOR UPDATE no se serializan compradores de zonas distintas
+                // esperando un lock que no necesitan; el propio UPDATE condicionado sigue siendo
+                // atómico en Oracle.
                 int versionActual;
                 try (PreparedStatement ps = con.prepareStatement(sqlSelectVersion)) {
                     ps.setQueryTimeout(TIMEOUT_SEGUNDOS);
@@ -103,10 +106,12 @@ public class OracleVentaRepository implements VentaRepository {
                 return true;
             } catch (SQLException e) {
                 con.rollback();
-                throw new RuntimeException("Error al guardar la compra; se revirtió la transacción completa", e);
+                RegistradorErrores.registrar("OracleVentaRepository.guardarCompraCompleta", e);
+                throw new RuntimeException("El servicio no pudo procesar la transacción.");
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Error de conexión al guardar la compra", e);
+            RegistradorErrores.registrar("OracleVentaRepository.guardarCompraCompleta", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 
@@ -122,6 +127,11 @@ public class OracleVentaRepository implements VentaRepository {
                 + "ORDER BY v.fecha_hora, v.id_venta";
 
         Map<String, VentaEnConstruccion> porVenta = new LinkedHashMap<>();
+        // Cache por Zona de sus entradas indexadas por número: evita recorrer linealmente
+        // zona.getEntradas() (buscarEntradaEnZona) en cada una de las N filas del historial, lo
+        // que degeneraba en O(N*tamañoZona) para historiales largos. Se construye una sola vez
+        // por zona, la primera vez que aparece.
+        Map<Zona, Map<Integer, Entrada>> entradasPorZona = new java.util.HashMap<>();
         try (Connection con = DatabaseConnection.getInstance().getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setQueryTimeout(TIMEOUT_SEGUNDOS);
@@ -147,7 +157,9 @@ public class OracleVentaRepository implements VentaRepository {
                         porVenta.put(idVenta, acumulado);
                     }
                     int numero = rs.getInt("numero");
-                    Entrada entradaViva = buscarEntradaEnZona(acumulado.zona, numero);
+                    Map<Integer, Entrada> indiceZona = acumulado.zona == null ? null
+                            : entradasPorZona.computeIfAbsent(acumulado.zona, OracleVentaRepository::indexarEntradasPorNumero);
+                    Entrada entradaViva = indiceZona == null ? null : indiceZona.get(numero);
                     if (entradaViva != null) {
                         acumulado.entradas.add(entradaViva); // misma instancia que ya vive en la Zona compartida
                     } else {
@@ -157,7 +169,8 @@ public class OracleVentaRepository implements VentaRepository {
                 }
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Error al cargar el historial de compras del cliente " + dniCliente, e);
+            RegistradorErrores.registrar("OracleVentaRepository.cargarHistorialPorCliente", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
 
         List<Venta> resultado = new ArrayList<>();
@@ -199,10 +212,12 @@ public class OracleVentaRepository implements VentaRepository {
                 return true;
             } catch (SQLException e) {
                 con.rollback();
-                throw new RuntimeException("Error al anular la venta; se revirtió la transacción", e);
+                RegistradorErrores.registrar("OracleVentaRepository.anularVentaPersistida", e);
+                throw new RuntimeException("El servicio no pudo procesar la transacción.");
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Error de conexión al anular la venta", e);
+            RegistradorErrores.registrar("OracleVentaRepository.anularVentaPersistida", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 
@@ -232,7 +247,8 @@ public class OracleVentaRepository implements VentaRepository {
             }
             return filas;
         } catch (SQLException e) {
-            throw new RuntimeException("Error al cargar el resumen de ventas para el administrador", e);
+            RegistradorErrores.registrar("OracleVentaRepository.cargarResumenVentasParaAdmin", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 
@@ -247,12 +263,12 @@ public class OracleVentaRepository implements VentaRepository {
         return null;
     }
 
-    private static Entrada buscarEntradaEnZona(Zona zona, int numero) {
-        if (zona == null) return null;
+    private static Map<Integer, Entrada> indexarEntradasPorNumero(Zona zona) {
+        Map<Integer, Entrada> indice = new java.util.HashMap<>();
         for (Entrada e : zona.getEntradas()) {
-            if (e.getNumero() == numero) return e;
+            indice.put(e.getNumero(), e);
         }
-        return null;
+        return indice;
     }
 
     private static String buscarNombreConcierto(List<Concierto> conciertos, String idConcierto) {

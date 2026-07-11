@@ -9,6 +9,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import modelo.Cliente;
+import util.RegistradorErrores;
 
 public class OracleClienteRepository implements ClienteRepository {
     private static final int TIMEOUT_SEGUNDOS = 10;
@@ -47,7 +48,8 @@ public class OracleClienteRepository implements ClienteRepository {
             ps.setDate(16, java.sql.Date.valueOf(cliente.getFechaNacimiento()));
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            throw new RuntimeException("Error al guardar cliente en la base de datos", e);
+            RegistradorErrores.registrar("OracleClienteRepository.save", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 
@@ -63,7 +65,8 @@ public class OracleClienteRepository implements ClienteRepository {
                 return rs.next() ? mapear(rs) : null;
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Error al buscar cliente en la base de datos", e);
+            RegistradorErrores.registrar("OracleClienteRepository.findByDni", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 
@@ -82,7 +85,8 @@ public class OracleClienteRepository implements ClienteRepository {
             }
             return resultado;
         } catch (SQLException e) {
-            throw new RuntimeException("Error al listar clientes de la base de datos", e);
+            RegistradorErrores.registrar("OracleClienteRepository.findAll", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 

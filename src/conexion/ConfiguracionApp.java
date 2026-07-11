@@ -33,6 +33,16 @@ public final class ConfiguracionApp {
         return new File(nombreArchivo);
     }
 
+    /**
+     * Devuelve dónde debería crearse (o ya existe) {@code nombreArchivo}, siempre junto al .jar
+     * en ejecución — a diferencia de {@link #resolverArchivo}, no cae al directorio de trabajo
+     * si el archivo todavía no existe. Pensado para archivos que la propia app genera (logs),
+     * donde el directorio de trabajo volátil de Windows es justo lo que se quiere evitar.
+     */
+    public static File resolverArchivoParaEscritura(String nombreArchivo) {
+        return new File(directorioDeInstalacion(), nombreArchivo);
+    }
+
     private static File directorioDeInstalacion() {
         try {
             URI ubicacionCodigo = ConfiguracionApp.class.getProtectionDomain()
