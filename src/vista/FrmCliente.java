@@ -16,6 +16,16 @@ public class FrmCliente extends javax.swing.JPanel {
     public FrmCliente() {
         initComponents();
         spnCantidadEntradas.setModel(new javax.swing.SpinnerNumberModel(1, 1, 4, 1));
+
+        // Por defecto un JSpinner numérico solo confirma el valor con Enter o al perder el foco;
+        // esto hace que cada tecla escrita dispare el ChangeListener de inmediato, para que el
+        // total del checkout se recalcule en caliente sin que el usuario tenga que salir del campo.
+        javax.swing.JSpinner.DefaultEditor editorCantidad = (javax.swing.JSpinner.DefaultEditor) spnCantidadEntradas.getEditor();
+        javax.swing.JFormattedTextField campoCantidad = editorCantidad.getTextField();
+        javax.swing.JFormattedTextField.AbstractFormatter formateador = campoCantidad.getFormatter();
+        if (formateador instanceof javax.swing.text.DefaultFormatter) {
+            ((javax.swing.text.DefaultFormatter) formateador).setCommitsOnValidEdit(true);
+        }
     }
 
     /**

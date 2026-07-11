@@ -1,5 +1,45 @@
 # Changelog
 
+## [Sin publicar] - 2026-07-11 (iteración 6: refactorización, criptografía y robustez)
+
+### Cambios implementados
+
+**Criptografía (`Persona.java`, OWASP A02)**
+- `hashPassword` migró de SHA-256 simple a `PBKDF2WithHmacSHA256` (API estándar de `javax.crypto`, sin dependencias externas), con 65 536 iteraciones y clave derivada de 256 bits. El salt (ya se guardaba como hex de 16 bytes) ahora se decodifica de vuelta a bytes crudos para la derivación, en vez de tratarse como texto.
+- El `PBEKeySpec` se purga con `clearPassword()` en el `finally`, y los bytes de la clave derivada y del salt decodificado se sobrescriben con `Arrays.fill(..., 0)` en el mismo bloque — nada de material criptográfico intermedio sobrevive más allá de la llamada.
+- **Compatibilidad**: la longitud del hash resultante sigue siendo 64 caracteres hex (32 bytes), igual que con SHA-256, así que `contrasena_hash VARCHAR2(64)` en `usuarios` no necesitó cambio de esquema. Los hashes ya existentes en la base (generados con el algoritmo viejo) dejan de ser válidos para el login — se regeneró a mano el hash del admin de desarrollo (`ResetAdminHash`, no versionado) contra la base real y se confirmó el login con el nuevo algoritmo end-to-end. Cualquier cliente registrado antes de esta iteración deberá re-registrarse o pedir un reseteo manual de contraseña (no había ningún flujo de "olvidé mi contraseña" antes de esto tampoco).
+
+**Clean Code (`ControladorCliente.java`)**
+- `actionPerformed` pasó de un bloque monolítico de `if/else if` a un enrutador puro: cada rama delega a `procesarRegistroTarjeta()`, `procesarCompraEntrada()` o `procesarLiberacionEntrada()`, con la lógica completa (antes inline) movida tal cual a cada método. Reduce la complejidad ciclomática del método principal sin cambiar ningún comportamiento.
+
+**Logs físicos (`util/RegistradorErrores.java`)**
+- `registrar(...)` ahora, además de `System.err`, hace *append* a `errores_app.log` (directorio de trabajo actual) con fecha/hora, contexto, tipo de excepción, mensaje y stacktrace completo. Un fallo al escribir el archivo no interrumpe el flujo ni oculta el error original — se traga la `IOException` y avisa por `System.err`. Verificado con una prueba que confirma la creación del archivo y su contenido.
+
+**Fail-fast en el arranque (`Principal.java`)**
+- Antes de instanciar los repositorios Oracle o levantar `FrmPrincipal`, `main()` llama a `validarConfiguracion()`: verifica que `config.properties` exista (vía `ConfiguracionApp`) y que tenga las 7 claves críticas (`db.url`, `db.user`, `db.password`, `mail.smtp.host`, `mail.smtp.port`, `mail.smtp.user`, `mail.smtp.password`). Si falta el archivo o alguna clave, muestra un `JOptionPane` con el detalle y aborta el arranque limpiamente, en vez de fallar más adelante con una `IllegalStateException` de JDBC menos clara para quien esté desplegando el sistema.
+
+**Reactividad del checkout (`ControladorCliente.actualizarResumenCompra`)**
+- Ahora valida explícitamente `cantidad > 4` (además del `cantidad < 1` ya cubierto) y limpia el resumen como si no hubiera selección válida — evita mostrar un preview de un descuento que la compra real rechazaría igual.
+
+**Commit en vivo del `JSpinner` (`FrmCliente.java`)**
+- En el constructor, tras fijar el `SpinnerNumberModel`, se obtiene el `JFormattedTextField` del editor por defecto y se llama `setCommitsOnValidEdit(true)` sobre su `DefaultFormatter`. El `ChangeListener` ya cableado en `ControladorCliente` (iteración 5) ahora dispara con cada tecla válida, no solo al perder foco o presionar Enter.
+
+### Verificación
+
+- PBKDF2: hash de 64 hex chars, determinista (mismo salt+clave), distinto ante clave o salt distintos; ~190ms por derivación (costo esperado y deliberado de 65 536 iteraciones).
+- Login de admin end-to-end contra Oracle real con el hash regenerado: credencial correcta aceptada, credencial incorrecta rechazada.
+- `RegistradorErrores`: archivo `errores_app.log` creado con el contexto y mensaje esperados.
+- `validarConfiguracion()` (vía reflexión, sin tocar el `config.properties` real): devuelve `null` con la configuración actual, completa.
+- `FrmCliente`: `DefaultFormatter.getCommitsOnValidEdit()` devuelve `true` tras construir el panel.
+- Compilación completa del proyecto sin errores.
+
+### Recomendaciones rechazadas en esta sesión
+
+- **Pool de conexiones (HikariCP)** para evitar la latencia de renegociación JDBC en los guardados múltiples: rechazado por la restricción de alcance manual — el proyecto se mantiene en JDBC puro con `try-with-resources`, sin librerías de terceros para pooling.
+- **`TransactionManager`** para evitar inconsistencias en escrituras múltiples: se mantuvo el `save()` secuencial (cliente y luego concierto, cada uno en su propia conexión/transacción) por las limitaciones de alcance ya impuestas al proyecto.
+- **Data Binding explícito** para desacoplar las lecturas manuales de tablas del controlador: se mantiene el llenado manual de `DefaultTableModel` en `ControladorCliente`/`ControladorAdministrador`, consistente con el resto del código Java plano del proyecto.
+- **`GlassPane`** en vez de `Cursor.WAIT_CURSOR` global para el feedback visual asíncrono: se mantiene el mecanismo ya implementado en `FrmPrincipal.iniciarCarga()/finalizarCarga()` (iteración 2).
+
 ## [Sin publicar] - 2026-07-11 (iteración 5: checkout interactivo con puntos de fidelidad)
 
 Antes de tocar código se auditó el pedido contra el estado actual del repo. La mayor parte del

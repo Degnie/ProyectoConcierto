@@ -21,6 +21,8 @@ import vista.FrmPrincipal;
 
 public class ControladorCliente implements ActionListener {
 
+    private static final int CANTIDAD_MAXIMA_POR_COMPRA = 4;
+
     private final FrmPrincipal principal;
     private final FrmCliente vista;
     private final Cliente clienteLogueado;
@@ -128,17 +130,20 @@ public class ControladorCliente implements ActionListener {
         vista.getTblMisCompras().setModel(dtm);
     }
 
-    // Preview del checkout: sin tarjeta registrada o sin zona/concierto seleccionados no hay nada
-    // que mostrar. Con eso, calcula el descuento de tarjeta, el techo de puntos redimibles para
-    // esta compra puntual, y el total final según si el checkbox está marcado o no. Todo esto vive
-    // como fórmulas puras en Venta (calcularDescuentoTarjeta/calcularMaximoPuntosRedimibles/
+    // Preview del checkout: sin tarjeta registrada, sin zona/concierto seleccionados, o con una
+    // cantidad fuera del rango permitido (1-4), no hay nada realizable que mostrar. Con datos
+    // válidos, calcula el descuento de tarjeta, el techo de puntos redimibles para esta compra
+    // puntual, y el total final según si el checkbox está marcado o no. Todo esto vive como
+    // fórmulas puras en Venta (calcularDescuentoTarjeta/calcularMaximoPuntosRedimibles/
     // calcularTotalFinal) — acá solo se leen los datos de la UI y se pintan los resultados.
     private void actualizarResumenCompra() {
         Tarjeta tarjeta = clienteLogueado.getTarjeta();
         int conIdx = vista.getCmbConciertosCliente().getSelectedIndex();
         int zonIdx = vista.getTblZonasDisponibles().getSelectedRow();
+        int cantidad = vista.getCantidadEntradas();
 
-        if (tarjeta == null || conIdx < 0 || conIdx >= listaConciertos.size() || zonIdx < 0) {
+        if (tarjeta == null || conIdx < 0 || conIdx >= listaConciertos.size() || zonIdx < 0
+                || cantidad < 1 || cantidad > CANTIDAD_MAXIMA_POR_COMPRA) {
             vista.limpiarResumenCompra();
             return;
         }
@@ -148,7 +153,6 @@ public class ControladorCliente implements ActionListener {
             return;
         }
         Zona zonaSel = conciertoSel.getZonas().get(zonIdx);
-        int cantidad = vista.getCantidadEntradas();
 
         double descuentoTarjeta = conciertoSel.getDescuento(tarjeta.getTipo());
         int montoConDescuentoTarjeta = Venta.calcularMontoConDescuentoTarjeta(zonaSel.getPrecio(), cantidad, descuentoTarjeta);
@@ -184,156 +188,162 @@ public class ControladorCliente implements ActionListener {
         }.execute();
     }
 
+    // actionPerformed queda como simple enrutador: cada rama delega a un método con nombre
+    // semántico, sin lógica propia acá más allá de decidir a quién le toca.
     @Override
     public void actionPerformed(ActionEvent e) {
         if (e.getSource() == vista.getCmbConciertosCliente()) {
             actualizarTablaZonas();
-        }
-
-        else if (e.getSource() == vista.getCmbTipoTarjeta()) {
+        } else if (e.getSource() == vista.getCmbTipoTarjeta()) {
             actualizarRequisitosTarjeta();
+        } else if (e.getSource() == vista.getBtnRegistrarTarjeta()) {
+            procesarRegistroTarjeta();
+        } else if (e.getSource() == vista.getBtnComprarEntrada()) {
+            procesarCompraEntrada();
+        } else if (e.getSource() == vista.getBtnLiberarEntrada()) {
+            procesarLiberacionEntrada();
+        } else if (e.getSource() == vista.getBtnCerrarSesion()) {
+            principal.mostrarLogin();
+        }
+    }
+
+    private void procesarRegistroTarjeta() {
+        String nroTarjeta = vista.getTarjNumero();
+        String fechaVenc = vista.getTarjFecha();
+        String cvv = vista.getTarjCvv();
+        TipoTarjeta tipoElegido = TipoTarjeta.valueOf((String) vista.getCmbTipoTarjeta().getSelectedItem());
+
+        if (nroTarjeta.isEmpty() || fechaVenc.isEmpty() || cvv.isEmpty()) {
+            JOptionPane.showMessageDialog(vista, "Por favor, complete todos los campos de la tarjeta.");
+            return;
         }
 
-        else if (e.getSource() == vista.getBtnRegistrarTarjeta()) {
-            String nroTarjeta = vista.getTarjNumero();
-            String fechaVenc = vista.getTarjFecha();
-            String cvv = vista.getTarjCvv();
-            TipoTarjeta tipoElegido = TipoTarjeta.valueOf((String) vista.getCmbTipoTarjeta().getSelectedItem());
-
-            if (nroTarjeta.isEmpty() || fechaVenc.isEmpty() || cvv.isEmpty()) {
-                JOptionPane.showMessageDialog(vista, "Por favor, complete todos los campos de la tarjeta.");
-                return;
-            }
-
-            if (!nroTarjeta.matches("\\d+") || !cvv.matches("\\d+")) {
-                JOptionPane.showMessageDialog(vista, "El número de tarjeta y el CVV deben ser numéricos.");
-                return;
-            }
-
-            if (!fechaVenc.matches("\\d{2}/\\d{2}")) {
-                JOptionPane.showMessageDialog(vista, "La fecha de vencimiento debe tener el formato MM/AA (ej. 12/28).");
-                return;
-            }
-
-            TipoTarjeta tipoDetectado = TipoTarjeta.detectar(nroTarjeta);
-            if (tipoDetectado != tipoElegido) {
-                JOptionPane.showMessageDialog(vista, "Seleccionaste " + tipoElegido + " pero el número ingresado corresponde a "
-                        + (tipoDetectado == TipoTarjeta.DESCONOCIDA ? "un emisor no reconocido" : tipoDetectado) + ".");
-                return;
-            }
-
-            try {
-                Tarjeta tarjetaSegura = new Tarjeta(nroTarjeta, cvv, fechaVenc);
-                String tokenPagoSimulado = "tok_" + java.util.UUID.randomUUID().toString().substring(0, 16);
-                clienteLogueado.setPaymentToken(tokenPagoSimulado);
-                clienteLogueado.registrarTarjeta(tarjetaSegura);
-
-                JOptionPane.showMessageDialog(vista, "Tarjeta " + tarjetaSegura.getTipo() + " tokenizada con éxito (Token: " + tokenPagoSimulado + ").");
-                vista.limpiarFormularioTarjeta();
-                actualizarResumenCompra();
-            } catch (TarjetaInvalidaException ex) {
-                JOptionPane.showMessageDialog(vista, ex.getMessage());
-            }
+        if (!nroTarjeta.matches("\\d+") || !cvv.matches("\\d+")) {
+            JOptionPane.showMessageDialog(vista, "El número de tarjeta y el CVV deben ser numéricos.");
+            return;
         }
 
-        else if (e.getSource() == vista.getBtnComprarEntrada()) {
-            if (clienteLogueado.getPaymentToken() == null) {
-                JOptionPane.showMessageDialog(vista, "Para realizar una compra, primero debe asociar una tarjeta de pago tokenizada.");
-                return;
-            }
+        if (!fechaVenc.matches("\\d{2}/\\d{2}")) {
+            JOptionPane.showMessageDialog(vista, "La fecha de vencimiento debe tener el formato MM/AA (ej. 12/28).");
+            return;
+        }
 
-            int conIdx = vista.getCmbConciertosCliente().getSelectedIndex();
-            int zonIdx = vista.getTblZonasDisponibles().getSelectedRow();
+        TipoTarjeta tipoDetectado = TipoTarjeta.detectar(nroTarjeta);
+        if (tipoDetectado != tipoElegido) {
+            JOptionPane.showMessageDialog(vista, "Seleccionaste " + tipoElegido + " pero el número ingresado corresponde a "
+                    + (tipoDetectado == TipoTarjeta.DESCONOCIDA ? "un emisor no reconocido" : tipoDetectado) + ".");
+            return;
+        }
 
-            if (conIdx < 0 || zonIdx < 0) {
-                JOptionPane.showMessageDialog(vista, "Seleccione un concierto y una zona de la lista.");
-                return;
-            }
+        try {
+            Tarjeta tarjetaSegura = new Tarjeta(nroTarjeta, cvv, fechaVenc);
+            String tokenPagoSimulado = "tok_" + java.util.UUID.randomUUID().toString().substring(0, 16);
+            clienteLogueado.setPaymentToken(tokenPagoSimulado);
+            clienteLogueado.registrarTarjeta(tarjetaSegura);
 
-            int cantidad = vista.getCantidadEntradas();
-            if (cantidad < 1 || cantidad > 4) {
-                JOptionPane.showMessageDialog(vista, "Permitido de 1 a 4 entradas por compra.");
-                return;
-            }
+            JOptionPane.showMessageDialog(vista, "Tarjeta " + tarjetaSegura.getTipo() + " tokenizada con éxito (Token: " + tokenPagoSimulado + ").");
+            vista.limpiarFormularioTarjeta();
+            actualizarResumenCompra();
+        } catch (TarjetaInvalidaException ex) {
+            JOptionPane.showMessageDialog(vista, ex.getMessage());
+        }
+    }
 
-            Concierto conciertoSel = listaConciertos.get(conIdx);
-            Zona zonaSel = conciertoSel.getZonas().get(zonIdx);
+    private void procesarCompraEntrada() {
+        if (clienteLogueado.getPaymentToken() == null) {
+            JOptionPane.showMessageDialog(vista, "Para realizar una compra, primero debe asociar una tarjeta de pago tokenizada.");
+            return;
+        }
 
-            if (zonaSel.getCantidadEntradasDisponibles() < cantidad) {
-                JOptionPane.showMessageDialog(vista, "No quedan suficientes entradas disponibles en esta zona.");
-                return;
-            }
+        int conIdx = vista.getCmbConciertosCliente().getSelectedIndex();
+        int zonIdx = vista.getTblZonasDisponibles().getSelectedRow();
 
-            // Mismo cálculo que usó el preview reactivo (Venta.calcularMaximoPuntosRedimibles):
-            // si el checkbox está marcado se redime el máximo permitido para esta compra puntual.
-            double descuentoTarjeta = conciertoSel.getDescuento(clienteLogueado.getTarjeta().getTipo());
-            int montoConDescuentoTarjeta = Venta.calcularMontoConDescuentoTarjeta(zonaSel.getPrecio(), cantidad, descuentoTarjeta);
-            int maxPuntosRedimibles = Venta.calcularMaximoPuntosRedimibles(montoConDescuentoTarjeta, clienteLogueado.getPuntos());
-            int puntosARedimir = vista.isAplicarPuntosSeleccionado() ? maxPuntosRedimibles : 0;
+        if (conIdx < 0 || zonIdx < 0) {
+            JOptionPane.showMessageDialog(vista, "Seleccione un concierto y una zona de la lista.");
+            return;
+        }
 
-            // La reserva de asientos y el tope de redención de puntos son invariantes del modelo
-            // (Zona/Venta); el controlador solo traduce sus excepciones a un mensaje.
-            boolean compraExitosa;
-            try {
-                compraExitosa = clienteLogueado.comprar(zonaSel, cantidad, conciertoSel, puntosARedimir);
-            } catch (ZonaAgotadaException | LimiteRedencionException ex) {
-                JOptionPane.showMessageDialog(vista, ex.getMessage());
-                return;
-            }
+        int cantidad = vista.getCantidadEntradas();
+        if (cantidad < 1 || cantidad > CANTIDAD_MAXIMA_POR_COMPRA) {
+            JOptionPane.showMessageDialog(vista, "Permitido de 1 a " + CANTIDAD_MAXIMA_POR_COMPRA + " entradas por compra.");
+            return;
+        }
 
-            if (compraExitosa) {
+        Concierto conciertoSel = listaConciertos.get(conIdx);
+        Zona zonaSel = conciertoSel.getZonas().get(zonIdx);
+
+        if (zonaSel.getCantidadEntradasDisponibles() < cantidad) {
+            JOptionPane.showMessageDialog(vista, "No quedan suficientes entradas disponibles en esta zona.");
+            return;
+        }
+
+        // Mismo cálculo que usó el preview reactivo (Venta.calcularMaximoPuntosRedimibles):
+        // si el checkbox está marcado se redime el máximo permitido para esta compra puntual.
+        double descuentoTarjeta = conciertoSel.getDescuento(clienteLogueado.getTarjeta().getTipo());
+        int montoConDescuentoTarjeta = Venta.calcularMontoConDescuentoTarjeta(zonaSel.getPrecio(), cantidad, descuentoTarjeta);
+        int maxPuntosRedimibles = Venta.calcularMaximoPuntosRedimibles(montoConDescuentoTarjeta, clienteLogueado.getPuntos());
+        int puntosARedimir = vista.isAplicarPuntosSeleccionado() ? maxPuntosRedimibles : 0;
+
+        // La reserva de asientos y el tope de redención de puntos son invariantes del modelo
+        // (Zona/Venta); el controlador solo traduce sus excepciones a un mensaje.
+        boolean compraExitosa;
+        try {
+            compraExitosa = clienteLogueado.comprar(zonaSel, cantidad, conciertoSel, puntosARedimir);
+        } catch (ZonaAgotadaException | LimiteRedencionException ex) {
+            JOptionPane.showMessageDialog(vista, ex.getMessage());
+            return;
+        }
+
+        if (compraExitosa) {
+            guardarEnSegundoPlano(() -> {
+                clienteRepository.save(clienteLogueado);
+                conciertoRepository.save(conciertoSel);
+            }, () -> {
+                JOptionPane.showMessageDialog(vista, "¡Compra efectuada con éxito!");
+                vista.setPuntosAcumulados(clienteLogueado.getPuntos());
+                actualizarTablaZonas();
+                actualizarTablaCompras();
+            });
+        } else {
+            JOptionPane.showMessageDialog(vista, "No se pudo procesar la compra de entradas.");
+        }
+    }
+
+    private void procesarLiberacionEntrada() {
+        int filaSel = vista.getTblMisCompras().getSelectedRow();
+        if (filaSel < 0) {
+            JOptionPane.showMessageDialog(vista, "Seleccione una compra de su lista para liberarla.");
+            return;
+        }
+
+        int confirm = JOptionPane.showConfirmDialog(vista,
+            "¿Está seguro de que desea liberar esta entrada? Se le restarán los puntos correspondientes.",
+            "Confirmar liberación", JOptionPane.YES_NO_OPTION);
+
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        try {
+            Venta ventaALiberar = clienteLogueado.getVentas().get(filaSel);
+            if (clienteLogueado.anularVenta(ventaALiberar)) {
+                Concierto conciertoDeVenta = buscarConciertoDeZona(ventaALiberar.getZona());
                 guardarEnSegundoPlano(() -> {
                     clienteRepository.save(clienteLogueado);
-                    conciertoRepository.save(conciertoSel);
+                    if (conciertoDeVenta != null) {
+                        conciertoRepository.save(conciertoDeVenta);
+                    }
                 }, () -> {
-                    JOptionPane.showMessageDialog(vista, "¡Compra efectuada con éxito!");
+                    JOptionPane.showMessageDialog(vista, "Operación de liberación procesada correctamente.");
                     vista.setPuntosAcumulados(clienteLogueado.getPuntos());
                     actualizarTablaZonas();
                     actualizarTablaCompras();
                 });
             } else {
-                JOptionPane.showMessageDialog(vista, "No se pudo procesar la compra de entradas.");
+                JOptionPane.showMessageDialog(vista, "La venta ya se encuentra anulada.");
             }
-        }
-
-        else if (e.getSource() == vista.getBtnLiberarEntrada()) {
-            int filaSel = vista.getTblMisCompras().getSelectedRow();
-            if (filaSel < 0) {
-                JOptionPane.showMessageDialog(vista, "Seleccione una compra de su lista para liberarla.");
-                return;
-            }
-
-            int confirm = JOptionPane.showConfirmDialog(vista,
-                "¿Está seguro de que desea liberar esta entrada? Se le restarán los puntos correspondientes.",
-                "Confirmar liberación", JOptionPane.YES_NO_OPTION);
-
-            if (confirm == JOptionPane.YES_OPTION) {
-                try {
-                    Venta ventaALiberar = clienteLogueado.getVentas().get(filaSel);
-                    if (clienteLogueado.anularVenta(ventaALiberar)) {
-                        Concierto conciertoDeVenta = buscarConciertoDeZona(ventaALiberar.getZona());
-                        guardarEnSegundoPlano(() -> {
-                            clienteRepository.save(clienteLogueado);
-                            if (conciertoDeVenta != null) {
-                                conciertoRepository.save(conciertoDeVenta);
-                            }
-                        }, () -> {
-                            JOptionPane.showMessageDialog(vista, "Operación de liberación procesada correctamente.");
-                            vista.setPuntosAcumulados(clienteLogueado.getPuntos());
-                            actualizarTablaZonas();
-                            actualizarTablaCompras();
-                        });
-                    } else {
-                        JOptionPane.showMessageDialog(vista, "La venta ya se encuentra anulada.");
-                    }
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(vista, "No se pudo anular la venta.");
-                }
-            }
-        }
-
-        else if (e.getSource() == vista.getBtnCerrarSesion()) {
-            principal.mostrarLogin();
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(vista, "No se pudo anular la venta.");
         }
     }
 

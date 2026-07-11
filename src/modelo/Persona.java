@@ -1,14 +1,13 @@
 package modelo;
 
-import java.nio.CharBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.Period;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 
 public abstract class Persona {
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -16,11 +15,19 @@ public abstract class Persona {
     private static final Pattern PATRON_CORREO = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final int EDAD_MINIMA = 18;
 
+    // PBKDF2WithHmacSHA256 (OWASP A02): API estándar de Java, sin dependencias externas. 65536
+    // iteraciones es el mínimo recomendado por OWASP para esta combinación de algoritmo/hash — hace
+    // que cada intento de fuerza bruta sea deliberadamente costoso de computar, a diferencia de un
+    // SHA-256 simple (rapidísimo de ejecutar en GPU, pensado para integridad, no para contraseñas).
+    private static final String ALGORITMO_PBKDF2 = "PBKDF2WithHmacSHA256";
+    private static final int PBKDF2_ITERACIONES = 65536;
+    private static final int PBKDF2_LONGITUD_CLAVE_BITS = 256;
+
     private UUID id;
     private String nombres;
     private String apellidos;
     private String dni;
-    private String contrasenaHash; // SHA-256(password + salt)
+    private String contrasenaHash; // PBKDF2WithHmacSHA256(password, salt, 65536 iteraciones)
     private String salt;
     private String correo;
     private LocalDate fechaNacimiento;
@@ -88,38 +95,41 @@ public abstract class Persona {
         return fechaNacimiento;
     }
 
-    // Un salt distinto por usuario evita que contraseñas iguales produzcan el mismo hash (rainbow tables)
+    // Un salt distinto por usuario evita que contraseñas iguales produzcan la misma derivación
+    // (rainbow tables). Se guarda como hex para poder persistirlo en una columna VARCHAR2.
     public static String generarSalt() {
         byte[] saltBytes = new byte[16];
         RANDOM.nextBytes(saltBytes);
         return aHex(saltBytes);
     }
 
-    // Hashea sin pasar por una String intermedia (que quedaría en el pool de Strings del heap)
+    // Deriva la clave con PBKDF2WithHmacSHA256. No pasa nunca por una String intermedia con la
+    // contraseña en claro; el PBEKeySpec y los bytes derivados se purgan en el finally.
     public static String hashPassword(char[] password, String salt) {
-        byte[] passwordBytes = charsToUtf8Bytes(password);
-        byte[] saltBytes = salt.getBytes(StandardCharsets.UTF_8);
-        byte[] combined = new byte[passwordBytes.length + saltBytes.length];
-        System.arraycopy(passwordBytes, 0, combined, 0, passwordBytes.length);
-        System.arraycopy(saltBytes, 0, combined, passwordBytes.length, saltBytes.length);
+        byte[] saltBytes = fromHex(salt);
+        PBEKeySpec especificacion = new PBEKeySpec(password, saltBytes, PBKDF2_ITERACIONES, PBKDF2_LONGITUD_CLAVE_BITS);
+        byte[] claveDerivada = null;
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = digest.digest(combined);
-            return aHex(hashBytes);
+            SecretKeyFactory factory = SecretKeyFactory.getInstance(ALGORITMO_PBKDF2);
+            claveDerivada = factory.generateSecret(especificacion).getEncoded();
+            return aHex(claveDerivada);
         } catch (Exception ex) {
-            throw new RuntimeException("Error al encriptar contraseña", ex);
+            throw new RuntimeException("Error al derivar la clave con PBKDF2", ex);
         } finally {
-            Arrays.fill(passwordBytes, (byte) 0);
-            Arrays.fill(combined, (byte) 0);
+            especificacion.clearPassword();
+            Arrays.fill(saltBytes, (byte) 0);
+            if (claveDerivada != null) {
+                Arrays.fill(claveDerivada, (byte) 0);
+            }
         }
     }
 
-    private static byte[] charsToUtf8Bytes(char[] chars) {
-        CharBuffer charBuffer = CharBuffer.wrap(chars);
-        java.nio.ByteBuffer byteBuffer = StandardCharsets.UTF_8.encode(charBuffer);
-        byte[] bytes = new byte[byteBuffer.remaining()];
-        byteBuffer.get(bytes);
-        Arrays.fill(byteBuffer.array(), (byte) 0);
+    private static byte[] fromHex(String hex) {
+        int longitud = hex.length();
+        byte[] bytes = new byte[longitud / 2];
+        for (int i = 0; i < longitud; i += 2) {
+            bytes[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4) + Character.digit(hex.charAt(i + 1), 16));
+        }
         return bytes;
     }
 
