@@ -3,8 +3,8 @@ package modelo;
 public class Usuario extends Persona {
     private boolean estado;
 
-    public Usuario(String nombres, String apellidos, String dni, String contraseña, String correo) {
-        super(nombres, apellidos, dni, contraseña, correo);
+    public Usuario(String nombres, String apellidos, String dni, String contrasenaHash, String salt, String correo) {
+        super(nombres, apellidos, dni, contrasenaHash, salt, correo);
         this.estado = true;
     }
 
@@ -19,7 +19,4 @@ public class Usuario extends Persona {
     public boolean isEstado() {
         return estado;
     }
-
-
-
 }

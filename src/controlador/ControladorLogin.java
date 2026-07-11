@@ -2,26 +2,40 @@ package controlador;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.ArrayList;
+import java.util.Arrays;
 import javax.swing.JOptionPane;
+import javax.swing.SwingWorker;
 import modelo.Cliente;
-import modelo.ClienteArreglo;
+import modelo.Concierto;
+import modelo.CredencialAdmin;
+import modelo.Persona;
+import repositorio.ClienteRepository;
+import repositorio.ConciertoRepository;
+import repositorio.UsuarioRepository;
 import vista.FrmAdministrador;
 import vista.FrmCliente;
 import vista.FrmLogin;
-import vista.FrmRegistroCliente;
+import vista.FrmPrincipal;
 
 public class ControladorLogin implements ActionListener {
-    
-    // Instancias de la Vista y los Almacenes de Datos (Modelo)
-    private FrmLogin vista;
-    private ClienteArreglo modeloClientes;
-    
-    // El constructor recibe la vista para controlarla y el almacén de datos existente
-    public ControladorLogin(FrmLogin vista, ClienteArreglo modeloClientes) {
-        this.vista = vista;
-        this.modeloClientes = modeloClientes;
-        
-        // Ponemos al controlador a "escuchar" cada botón de la pantalla de Login
+
+    private final FrmPrincipal principal;
+    private final FrmLogin vista;
+    private final ClienteRepository clienteRepository;
+    private final UsuarioRepository usuarioRepository;
+    private final ArrayList<Concierto> listaConciertos;
+    private final ConciertoRepository conciertoRepository;
+
+    public ControladorLogin(FrmPrincipal principal, ClienteRepository clienteRepository, UsuarioRepository usuarioRepository,
+                             ArrayList<Concierto> listaConciertos, ConciertoRepository conciertoRepository) {
+        this.principal = principal;
+        this.vista = principal.getVistaLogin();
+        this.clienteRepository = clienteRepository;
+        this.usuarioRepository = usuarioRepository;
+        this.listaConciertos = listaConciertos;
+        this.conciertoRepository = conciertoRepository;
+
         this.vista.getBtnLoginCliente().addActionListener(this);
         this.vista.getBtnLoginAdmin().addActionListener(this);
         this.vista.getBtnRegistrarse().addActionListener(this);
@@ -29,67 +43,111 @@ public class ControladorLogin implements ActionListener {
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        // CAPTURA DE DATOS: Obtenemos lo que el usuario escribió mediante los Getters de la vista
         String dni = vista.getDni();
-        String contrasena = vista.getContrasena();
+        char[] contrasena = vista.getContrasenaChars();
 
-        // CASO 1: Hizo clic en "Iniciar Sesión Cliente"
         if (e.getSource() == vista.getBtnLoginCliente()) {
-            if (dni.isEmpty() || contrasena.isEmpty()) {
+            if (dni.isEmpty() || contrasena.length == 0) {
+                Arrays.fill(contrasena, '0');
                 JOptionPane.showMessageDialog(vista, "Por favor, complete todos los campos.");
                 return;
             }
-            
-            // Buscamos al cliente en el repositorio profesional
-            Cliente clienteEncontrado = proyectoentradas24200075.Principal.clienteRepository.findByDni(dni);
-            
-            // Validamos las credenciales usando el método interno del modelo Cliente (que ya realiza hash SHA-256)
-            if (clienteEncontrado != null && clienteEncontrado.ingresar(dni, contrasena)) {
-                JOptionPane.showMessageDialog(vista, "¡Bienvenido " + clienteEncontrado.getNombres() + "!");
-                
-                FrmCliente frmCliente = new FrmCliente();
-                
-                // CONEXIÓN VITAL: Conectamos la vista con su respectivo controlador de cliente
-                new ControladorCliente(frmCliente, clienteEncontrado, this.modeloClientes, proyectoentradas24200075.Principal.listaConciertos);
-                
-                frmCliente.setVisible(true);
-                vista.dispose(); // Cerramos el login
-            } else {
-                JOptionPane.showMessageDialog(vista, "DNI o contraseña incorrectos para Cliente.");
-            }
-        }
-        
-        // CASO 2: Hizo clic en "Iniciar Sesión Administrador"
-        else if (e.getSource() == vista.getBtnLoginAdmin()) {
-            if (dni.isEmpty() || contrasena.isEmpty()) {
+            loginCliente(dni, contrasena);
+        } else if (e.getSource() == vista.getBtnLoginAdmin()) {
+            if (dni.isEmpty() || contrasena.length == 0) {
+                Arrays.fill(contrasena, '0');
                 JOptionPane.showMessageDialog(vista, "Por favor, complete todos los campos.");
                 return;
             }
-            
-            // Validación directa en base a un usuario Administrador por defecto
-            if (dni.equals("admin") && contrasena.equals("1234")) {
-                JOptionPane.showMessageDialog(vista, "Acceso concedido como Administrador.");
-                
-                FrmAdministrador frmAdmin = new FrmAdministrador();
-                
-                // CONEXIÓN VITAL: Instanciamos el ControladorAdministrador pasándole la vista y la lista global
-                new ControladorAdministrador(frmAdmin, this.modeloClientes, proyectoentradas24200075.Principal.listaConciertos);
-                
-                frmAdmin.setVisible(true);
-                vista.dispose();
-            } else {
-                JOptionPane.showMessageDialog(vista, "Credenciales de Administrador inválidas.");
-            }
-        }
-        
-        // CASO 3: Hizo clic en el botón "Registrarse"
-        else if (e.getSource() == vista.getBtnRegistrarse()) {
-            FrmRegistroCliente frmRegistro = new FrmRegistroCliente();
-            ControladorRegistro controladorRegistro = new ControladorRegistro(frmRegistro, modeloClientes);
-            frmRegistro.setVisible(true);
-            vista.dispose(); 
+            loginAdmin(dni, contrasena);
+        } else if (e.getSource() == vista.getBtnRegistrarse()) {
+            Arrays.fill(contrasena, '0');
+            principal.mostrarRegistro();
         }
     }
+
+    // La consulta a la BD y el hashing corren fuera del Event Dispatch Thread para no congelar la UI
+    private void loginCliente(String dni, char[] contrasena) {
+        setControlesHabilitados(false);
+        new SwingWorker<Cliente, Void>() {
+            @Override
+            protected Cliente doInBackground() {
+                Cliente encontrado = clienteRepository.findByDni(dni);
+                if (encontrado == null) {
+                    Arrays.fill(contrasena, '0');
+                    return null;
+                }
+                return encontrado.ingresar(dni, contrasena) ? encontrado : null;
+            }
+
+            @Override
+            protected void done() {
+                setControlesHabilitados(true);
+                vista.limpiarContrasena();
+                Cliente clienteEncontrado = get_();
+                if (clienteEncontrado != null) {
+                    JOptionPane.showMessageDialog(vista, "¡Bienvenido " + clienteEncontrado.getNombres() + "!");
+                    FrmCliente frmCliente = new FrmCliente();
+                    new ControladorCliente(principal, frmCliente, clienteEncontrado, clienteRepository, listaConciertos, conciertoRepository);
+                    principal.mostrarCliente(frmCliente);
+                } else {
+                    JOptionPane.showMessageDialog(vista, "DNI o contraseña incorrectos para Cliente.");
+                }
+            }
+
+            private Cliente get_() {
+                try {
+                    return get();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(vista, "Error al validar credenciales: " + ex.getMessage());
+                    return null;
+                }
+            }
+        }.execute();
+    }
+
+    private void loginAdmin(String dni, char[] contrasena) {
+        setControlesHabilitados(false);
+        new SwingWorker<Boolean, Void>() {
+            @Override
+            protected Boolean doInBackground() {
+                CredencialAdmin credencial = usuarioRepository.buscarAdminPorDni(dni);
+                if (credencial == null) {
+                    return false;
+                }
+                String hashIngresado = Persona.hashPassword(contrasena, credencial.getSalt());
+                return hashIngresado.equals(credencial.getContrasenaHash());
+            }
+
+            @Override
+            protected void done() {
+                setControlesHabilitados(true);
+                Arrays.fill(contrasena, '0');
+                vista.limpiarContrasena();
+                boolean autenticado = get_();
+                if (autenticado) {
+                    JOptionPane.showMessageDialog(vista, "Acceso concedido como Administrador.");
+                    FrmAdministrador frmAdmin = new FrmAdministrador();
+                    new ControladorAdministrador(principal, frmAdmin, clienteRepository, listaConciertos, conciertoRepository);
+                    principal.mostrarAdministrador(frmAdmin);
+                } else {
+                    JOptionPane.showMessageDialog(vista, "Credenciales de Administrador inválidas.");
+                }
+            }
+
+            private boolean get_() {
+                try {
+                    return get();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(vista, "Error al validar credenciales: " + ex.getMessage());
+                    return false;
+                }
+            }
+        }.execute();
+    }
+
+    private void setControlesHabilitados(boolean habilitados) {
+        vista.getBtnLoginCliente().setEnabled(habilitados);
+        vista.getBtnLoginAdmin().setEnabled(habilitados);
+    }
 }
-
-

@@ -1,7 +1,9 @@
 package modelo;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
 
 public class Cliente extends Persona {
     private int puntos;
@@ -9,18 +11,20 @@ public class Cliente extends Persona {
     private ArrayList<Venta> ventas;
     private String paymentToken;
 
-    public Cliente(String nombres, String apellidos, String dni, String contraseña, String correo) {
-        super(nombres, apellidos, dni, contraseña, correo);
+    public Cliente(String nombres, String apellidos, String dni, String contrasenaHash, String salt, String correo) {
+        super(nombres, apellidos, dni, contrasenaHash, salt, correo);
         this.puntos = 0;
         this.tarjeta = null;
         this.ventas = new ArrayList<>();
         this.paymentToken = null;
     }
 
-    public boolean ingresar(String usuario, String clave) {
+    // clave se sobrescribe con ceros apenas se calcula el hash, no queda en memoria más de lo necesario
+    public boolean ingresar(String usuario, char[] clave) {
         boolean result = false;
-        String hashedClave = Persona.hashPassword(clave);
-        if (this.getDni().equals(usuario) && this.getContraseña().equals(hashedClave)) {
+        String hashIngresado = Persona.hashPassword(clave, this.getSalt());
+        Arrays.fill(clave, '0');
+        if (this.getDni().equals(usuario) && this.getContrasenaHash().equals(hashIngresado)) {
             result = true;
         }
         return result;
@@ -80,8 +84,8 @@ public class Cliente extends Persona {
         return tarjeta;
     }
 
-    public ArrayList<Venta> getVentas() {
-        return ventas;
+    public List<Venta> getVentas() {
+        return new ArrayList<>(ventas);
     }
 
     public String getPaymentToken() {

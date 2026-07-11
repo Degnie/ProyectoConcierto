@@ -3,31 +3,38 @@ package controlador;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import javax.swing.JOptionPane;
+import javax.swing.SwingWorker;
 import javax.swing.table.DefaultTableModel;
 import modelo.Cliente;
-import modelo.ClienteArreglo;
 import modelo.Concierto;
 import modelo.Zona;
 import modelo.Venta;
 import modelo.Tarjeta;
 import modelo.TarjetaInvalidaException;
 import modelo.TipoTarjeta;
-import modelo.ArchivoConciertos;
+import repositorio.ClienteRepository;
+import repositorio.ConciertoRepository;
 import vista.FrmCliente;
-import vista.FrmLogin;
+import vista.FrmPrincipal;
 
 public class ControladorCliente implements ActionListener {
 
-    private FrmCliente vista;
-    private Cliente clienteLogueado;
-    private ClienteArreglo modeloClientes;
-    private java.util.ArrayList<Concierto> listaConciertos;
+    private final FrmPrincipal principal;
+    private final FrmCliente vista;
+    private final Cliente clienteLogueado;
+    private final ClienteRepository clienteRepository;
+    private final java.util.ArrayList<Concierto> listaConciertos;
+    private final ConciertoRepository conciertoRepository;
 
-    public ControladorCliente(FrmCliente vista, Cliente clienteLogueado, ClienteArreglo modeloClientes, java.util.ArrayList<Concierto> listaConciertos) {
+    public ControladorCliente(FrmPrincipal principal, FrmCliente vista, Cliente clienteLogueado,
+                               ClienteRepository clienteRepository, java.util.ArrayList<Concierto> listaConciertos,
+                               ConciertoRepository conciertoRepository) {
+        this.principal = principal;
         this.vista = vista;
         this.clienteLogueado = clienteLogueado;
-        this.modeloClientes = modeloClientes;
+        this.clienteRepository = clienteRepository;
         this.listaConciertos = listaConciertos;
+        this.conciertoRepository = conciertoRepository;
 
         this.vista.getBtnRegistrarTarjeta().addActionListener(this);
         this.vista.getBtnComprarEntrada().addActionListener(this);
@@ -86,19 +93,17 @@ public class ControladorCliente implements ActionListener {
 
     private void actualizarTablaCompras() {
         DefaultTableModel dtm = new DefaultTableModel(new Object[]{"Concierto", "Zona", "Cantidad", "Monto Total", "Estado"}, 0);
-        
+
         if (clienteLogueado != null && clienteLogueado.getVentas() != null) {
             for (Venta v : clienteLogueado.getVentas()) {
                 if (v != null) {
                     String nomZona = (v.getZona() != null) ? v.getZona().getNombre() : "Ubicación";
                     int montoTotal = v.getMonto();
                     int cantEntradas = (v.getEntradas() != null) ? v.getEntradas().length : 0;
-
-                    // Mapeo nativo exitoso usando tu método isAnulada() real
                     String estadoVenta = v.isAnulada() ? "Anulado" : "Pagado";
 
                     dtm.addRow(new Object[]{
-                        v.getConciertoNombre() != null ? v.getConciertoNombre() : "Evento", 
+                        v.getConciertoNombre() != null ? v.getConciertoNombre() : "Evento",
                         nomZona,
                         cantEntradas,
                         montoTotal,
@@ -108,6 +113,22 @@ public class ControladorCliente implements ActionListener {
             }
         }
         vista.getTblMisCompras().setModel(dtm);
+    }
+
+    // Toda escritura a la BD (cliente y/o concierto) corre fuera del EDT para no congelar la UI
+    private void guardarEnSegundoPlano(Runnable trabajoDeBd, Runnable alTerminar) {
+        new SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() {
+                trabajoDeBd.run();
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                alTerminar.run();
+            }
+        }.execute();
     }
 
     @Override
@@ -141,7 +162,6 @@ public class ControladorCliente implements ActionListener {
                 return;
             }
 
-            // El emisor elegido en el combo debe coincidir con el que se detecta por el número
             TipoTarjeta tipoDetectado = TipoTarjeta.detectar(nroTarjeta);
             if (tipoDetectado != tipoElegido) {
                 JOptionPane.showMessageDialog(vista, "Seleccionaste " + tipoElegido + " pero el número ingresado corresponde a "
@@ -150,10 +170,7 @@ public class ControladorCliente implements ActionListener {
             }
 
             try {
-                // El constructor detecta el emisor (VISA/MASTERCARD/DINERS/AMEX), valida dígitos y Luhn
                 Tarjeta tarjetaSegura = new Tarjeta(nroTarjeta, cvv, fechaVenc);
-
-                // Simulación de tokenización PCI-DSS: el número completo y el CVV nunca se guardan
                 String tokenPagoSimulado = "tok_" + java.util.UUID.randomUUID().toString().substring(0, 16);
                 clienteLogueado.setPaymentToken(tokenPagoSimulado);
                 clienteLogueado.registrarTarjeta(tarjetaSegura);
@@ -166,7 +183,6 @@ public class ControladorCliente implements ActionListener {
         }
 
         else if (e.getSource() == vista.getBtnComprarEntrada()) {
-            // Requerir explícitamente tarjeta tokenizada segura (PCI-DSS)
             if (clienteLogueado.getPaymentToken() == null) {
                 JOptionPane.showMessageDialog(vista, "Para realizar una compra, primero debe asociar una tarjeta de pago tokenizada.");
                 return;
@@ -194,19 +210,18 @@ public class ControladorCliente implements ActionListener {
                 return;
             }
 
-            // Llamada nativa al modelo de clases (el descuento por emisor se aplica dentro de comprar())
             boolean compraExitosa = clienteLogueado.comprar(zonaSel, cantidad, conciertoSel);
 
             if (compraExitosa) {
-                try { 
-                    ArchivoConciertos.guardarConciertos(listaConciertos); 
-                } catch(Exception ex){}
-                
-                JOptionPane.showMessageDialog(vista, "¡Compra efectuada con éxito!");
-                
-                vista.setPuntosAcumulados(clienteLogueado.getPuntos());
-                actualizarTablaZonas();
-                actualizarTablaCompras();
+                guardarEnSegundoPlano(() -> {
+                    clienteRepository.save(clienteLogueado);
+                    conciertoRepository.save(conciertoSel);
+                }, () -> {
+                    JOptionPane.showMessageDialog(vista, "¡Compra efectuada con éxito!");
+                    vista.setPuntosAcumulados(clienteLogueado.getPuntos());
+                    actualizarTablaZonas();
+                    actualizarTablaCompras();
+                });
             } else {
                 JOptionPane.showMessageDialog(vista, "No se pudo procesar la compra de entradas.");
             }
@@ -218,38 +233,47 @@ public class ControladorCliente implements ActionListener {
                 JOptionPane.showMessageDialog(vista, "Seleccione una compra de su lista para liberarla.");
                 return;
             }
-            
-            int confirm = JOptionPane.showConfirmDialog(vista, 
-                "¿Está seguro de que desea liberar esta entrada? Se le restarán los puntos correspondientes.", 
+
+            int confirm = JOptionPane.showConfirmDialog(vista,
+                "¿Está seguro de que desea liberar esta entrada? Se le restarán los puntos correspondientes.",
                 "Confirmar liberación", JOptionPane.YES_NO_OPTION);
-            
+
             if (confirm == JOptionPane.YES_OPTION) {
                 try {
                     Venta ventaALiberar = clienteLogueado.getVentas().get(filaSel);
                     if (clienteLogueado.anularVenta(ventaALiberar)) {
-                        try { 
-                            ArchivoConciertos.guardarConciertos(listaConciertos); 
-                        } catch(Exception ex){}
-                        
-                        JOptionPane.showMessageDialog(vista, "Operación de liberación procesada correctamente.");
-                        
-                        vista.setPuntosAcumulados(clienteLogueado.getPuntos());
-                        actualizarTablaZonas();
-                        actualizarTablaCompras();
+                        Concierto conciertoDeVenta = buscarConciertoDeZona(ventaALiberar.getZona());
+                        guardarEnSegundoPlano(() -> {
+                            clienteRepository.save(clienteLogueado);
+                            if (conciertoDeVenta != null) {
+                                conciertoRepository.save(conciertoDeVenta);
+                            }
+                        }, () -> {
+                            JOptionPane.showMessageDialog(vista, "Operación de liberación procesada correctamente.");
+                            vista.setPuntosAcumulados(clienteLogueado.getPuntos());
+                            actualizarTablaZonas();
+                            actualizarTablaCompras();
+                        });
                     } else {
                         JOptionPane.showMessageDialog(vista, "La venta ya se encuentra anulada.");
                     }
-                } catch(Exception ex) {
+                } catch (Exception ex) {
                     JOptionPane.showMessageDialog(vista, "No se pudo anular la venta.");
                 }
             }
         }
 
         else if (e.getSource() == vista.getBtnCerrarSesion()) {
-            FrmLogin login = new FrmLogin();
-            new ControladorLogin(login, modeloClientes);
-            login.setVisible(true);
-            vista.dispose();
+            principal.mostrarLogin();
         }
+    }
+
+    private Concierto buscarConciertoDeZona(Zona zona) {
+        for (Concierto c : listaConciertos) {
+            if (c.getZonas().contains(zona)) {
+                return c;
+            }
+        }
+        return null;
     }
 }

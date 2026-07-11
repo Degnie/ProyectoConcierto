@@ -1,6 +1,6 @@
 /*
  * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/GUIForms/JFrame.java to edit this template
+ * Click nbfs://nbhost/SystemFileSystem/Templates/GUIForms/JPanel.java to edit this template
  */
 package vista;
 
@@ -8,7 +8,7 @@ package vista;
  *
  * @author user
  */
-public class FrmRegistroCliente extends javax.swing.JFrame {
+public class FrmRegistroCliente extends javax.swing.JPanel {
 
     /**
      * Creates new form FrmRegistroCliente
@@ -31,7 +31,7 @@ public class FrmRegistroCliente extends javax.swing.JFrame {
         txtDni = new javax.swing.JTextField();
         txtNombres = new javax.swing.JTextField();
         txtApellidos = new javax.swing.JTextField();
-        txtContrasena = new javax.swing.JTextField();
+        txtContrasena = new javax.swing.JPasswordField();
         txtFechaNacimiento = new javax.swing.JTextField();
         txtCorreo = new javax.swing.JTextField();
         jLabel1 = new javax.swing.JLabel();
@@ -41,10 +41,15 @@ public class FrmRegistroCliente extends javax.swing.JFrame {
         jLabel5 = new javax.swing.JLabel();
         jLabel6 = new javax.swing.JLabel();
         jLabel7 = new javax.swing.JLabel();
-
-        setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
+        lblErrorDni = new javax.swing.JLabel();
+        lblErrorNombres = new javax.swing.JLabel();
+        lblErrorApellidos = new javax.swing.JLabel();
+        lblErrorContrasena = new javax.swing.JLabel();
+        lblErrorFecha = new javax.swing.JLabel();
+        lblErrorCorreo = new javax.swing.JLabel();
 
         btnRegistrar.setText("Registrar");
+        btnRegistrar.setEnabled(false);
 
         btnRegresar.setText("Regresar");
         btnRegresar.addActionListener(new java.awt.event.ActionListener() {
@@ -54,51 +59,49 @@ public class FrmRegistroCliente extends javax.swing.JFrame {
         });
 
         jLabel1.setText("DNI");
-
         jLabel2.setText("Nombres");
-
         jLabel3.setText("Apellidos");
-
         jLabel4.setText("Contraseña");
-
         jLabel5.setText("Registro Cliente");
-
         jLabel6.setText("F. Nacimiento (dd/MM/aaaa)");
-
         jLabel7.setText("Correo");
 
-        javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
-        getContentPane().setLayout(layout);
+        for (javax.swing.JLabel lblError : new javax.swing.JLabel[]{
+            lblErrorDni, lblErrorNombres, lblErrorApellidos, lblErrorContrasena, lblErrorFecha, lblErrorCorreo}) {
+            lblError.setForeground(java.awt.Color.RED);
+            lblError.setFont(lblError.getFont().deriveFont(11f));
+        }
+
+        javax.swing.GroupLayout layout = new javax.swing.GroupLayout(this);
+        this.setLayout(layout);
         layout.setHorizontalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(layout.createSequentialGroup()
+                .addGap(75, 75, 75)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(jLabel5)
                     .addGroup(layout.createSequentialGroup()
-                        .addGap(75, 75, 75)
                         .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                            .addGroup(layout.createSequentialGroup()
-                                .addComponent(btnRegistrar)
-                                .addGap(81, 81, 81)
-                                .addComponent(btnRegresar))
-                            .addGroup(layout.createSequentialGroup()
-                                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                                    .addComponent(jLabel3)
-                                    .addComponent(jLabel4)
-                                    .addComponent(jLabel2)
-                                    .addComponent(jLabel1)
-                                    .addComponent(jLabel6)
-                                    .addComponent(jLabel7))
-                                .addGap(26, 26, 26)
-                                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
-                                    .addComponent(txtNombres, javax.swing.GroupLayout.PREFERRED_SIZE, 183, javax.swing.GroupLayout.PREFERRED_SIZE)
-                                    .addComponent(txtDni, javax.swing.GroupLayout.PREFERRED_SIZE, 183, javax.swing.GroupLayout.PREFERRED_SIZE)
-                                    .addComponent(txtApellidos, javax.swing.GroupLayout.PREFERRED_SIZE, 183, javax.swing.GroupLayout.PREFERRED_SIZE)
-                                    .addComponent(txtContrasena, javax.swing.GroupLayout.PREFERRED_SIZE, 183, javax.swing.GroupLayout.PREFERRED_SIZE)
-                                    .addComponent(txtFechaNacimiento, javax.swing.GroupLayout.PREFERRED_SIZE, 183, javax.swing.GroupLayout.PREFERRED_SIZE)
-                                    .addComponent(txtCorreo, javax.swing.GroupLayout.PREFERRED_SIZE, 183, javax.swing.GroupLayout.PREFERRED_SIZE)))))
+                            .addComponent(jLabel1).addComponent(jLabel2).addComponent(jLabel3)
+                            .addComponent(jLabel4).addComponent(jLabel6).addComponent(jLabel7))
+                        .addGap(26, 26, 26)
+                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addComponent(txtDni, javax.swing.GroupLayout.PREFERRED_SIZE, 220, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(lblErrorDni)
+                            .addComponent(txtNombres, javax.swing.GroupLayout.PREFERRED_SIZE, 220, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(lblErrorNombres)
+                            .addComponent(txtApellidos, javax.swing.GroupLayout.PREFERRED_SIZE, 220, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(lblErrorApellidos)
+                            .addComponent(txtContrasena, javax.swing.GroupLayout.PREFERRED_SIZE, 220, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(lblErrorContrasena)
+                            .addComponent(txtFechaNacimiento, javax.swing.GroupLayout.PREFERRED_SIZE, 220, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(lblErrorFecha)
+                            .addComponent(txtCorreo, javax.swing.GroupLayout.PREFERRED_SIZE, 220, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(lblErrorCorreo)))
                     .addGroup(layout.createSequentialGroup()
-                        .addGap(150, 150, 150)
-                        .addComponent(jLabel5)))
+                        .addComponent(btnRegistrar)
+                        .addGap(81, 81, 81)
+                        .addComponent(btnRegresar)))
                 .addContainerGap(40, Short.MAX_VALUE))
         );
         layout.setVerticalGroup(
@@ -110,74 +113,43 @@ public class FrmRegistroCliente extends javax.swing.JFrame {
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(txtDni, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(jLabel1))
-                .addGap(18, 18, 18)
+                .addComponent(lblErrorDni)
+                .addGap(10, 10, 10)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(txtNombres, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(jLabel2))
-                .addGap(18, 18, 18)
+                .addComponent(lblErrorNombres)
+                .addGap(10, 10, 10)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(txtApellidos, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(jLabel3))
-                .addGap(18, 18, 18)
+                .addComponent(lblErrorApellidos)
+                .addGap(10, 10, 10)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(txtContrasena, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(jLabel4))
-                .addGap(18, 18, 18)
+                .addComponent(lblErrorContrasena)
+                .addGap(10, 10, 10)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(txtFechaNacimiento, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(jLabel6))
-                .addGap(18, 18, 18)
+                .addComponent(lblErrorFecha)
+                .addGap(10, 10, 10)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(txtCorreo, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(jLabel7))
+                .addComponent(lblErrorCorreo)
                 .addGap(18, 18, 18)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(btnRegistrar)
                     .addComponent(btnRegresar))
                 .addContainerGap(17, Short.MAX_VALUE))
         );
-
-        pack();
     }// </editor-fold>//GEN-END:initComponents
 
     private void btnRegresarActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRegresarActionPerformed
         // TODO add your handling code here:
     }//GEN-LAST:event_btnRegresarActionPerformed
-
-    /**
-     * @param args the command line arguments
-     */
-    public static void main(String args[]) {
-        /* Set the Nimbus look and feel */
-        //<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
-        /* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
-         * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
-         */
-        try {
-            for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-                if ("Nimbus".equals(info.getName())) {
-                    javax.swing.UIManager.setLookAndFeel(info.getClassName());
-                    break;
-                }
-            }
-        } catch (ClassNotFoundException ex) {
-            java.util.logging.Logger.getLogger(FrmRegistroCliente.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (InstantiationException ex) {
-            java.util.logging.Logger.getLogger(FrmRegistroCliente.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (IllegalAccessException ex) {
-            java.util.logging.Logger.getLogger(FrmRegistroCliente.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (javax.swing.UnsupportedLookAndFeelException ex) {
-            java.util.logging.Logger.getLogger(FrmRegistroCliente.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        }
-        //</editor-fold>
-
-        /* Create and display the form */
-        java.awt.EventQueue.invokeLater(new Runnable() {
-            public void run() {
-                new FrmRegistroCliente().setVisible(true);
-            }
-        });
-    }
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JButton btnRegistrar;
@@ -189,20 +161,50 @@ public class FrmRegistroCliente extends javax.swing.JFrame {
     private javax.swing.JLabel jLabel5;
     private javax.swing.JLabel jLabel6;
     private javax.swing.JLabel jLabel7;
+    private javax.swing.JLabel lblErrorApellidos;
+    private javax.swing.JLabel lblErrorContrasena;
+    private javax.swing.JLabel lblErrorCorreo;
+    private javax.swing.JLabel lblErrorDni;
+    private javax.swing.JLabel lblErrorFecha;
+    private javax.swing.JLabel lblErrorNombres;
     private javax.swing.JTextField txtApellidos;
-    private javax.swing.JTextField txtContrasena;
+    private javax.swing.JPasswordField txtContrasena;
     private javax.swing.JTextField txtCorreo;
     private javax.swing.JTextField txtDni;
     private javax.swing.JTextField txtFechaNacimiento;
     private javax.swing.JTextField txtNombres;
     // End of variables declaration//GEN-END:variables
-public javax.swing.JButton getBtnRegistrar() { return btnRegistrar; }
-public javax.swing.JButton getBtnRegresar() { return btnRegresar; }
 
-public String getDni() { return txtDni.getText().trim(); }
-public String getNombres() { return txtNombres.getText().trim(); }
-public String getApellidos() { return txtApellidos.getText().trim(); }
-public String getContrasena() { return txtContrasena.getText().trim(); }
-public String getFechaNacimiento() { return txtFechaNacimiento.getText().trim(); }
-public String getCorreo() { return txtCorreo.getText().trim(); }
+    public javax.swing.JButton getBtnRegistrar() { return btnRegistrar; }
+    public javax.swing.JButton getBtnRegresar() { return btnRegresar; }
+
+    public String getDni() { return txtDni.getText().trim(); }
+    public String getNombres() { return txtNombres.getText().trim(); }
+    public String getApellidos() { return txtApellidos.getText().trim(); }
+    public char[] getContrasenaChars() { return txtContrasena.getPassword(); }
+    public String getFechaNacimiento() { return txtFechaNacimiento.getText().trim(); }
+    public String getCorreo() { return txtCorreo.getText().trim(); }
+
+    public javax.swing.JTextField getTxtDni() { return txtDni; }
+    public javax.swing.JTextField getTxtNombres() { return txtNombres; }
+    public javax.swing.JTextField getTxtApellidos() { return txtApellidos; }
+    public javax.swing.JPasswordField getTxtContrasena() { return txtContrasena; }
+    public javax.swing.JTextField getTxtFechaNacimiento() { return txtFechaNacimiento; }
+    public javax.swing.JTextField getTxtCorreo() { return txtCorreo; }
+
+    public void setErrorDni(String msg) { lblErrorDni.setText(msg == null ? " " : msg); }
+    public void setErrorNombres(String msg) { lblErrorNombres.setText(msg == null ? " " : msg); }
+    public void setErrorApellidos(String msg) { lblErrorApellidos.setText(msg == null ? " " : msg); }
+    public void setErrorContrasena(String msg) { lblErrorContrasena.setText(msg == null ? " " : msg); }
+    public void setErrorFecha(String msg) { lblErrorFecha.setText(msg == null ? " " : msg); }
+    public void setErrorCorreo(String msg) { lblErrorCorreo.setText(msg == null ? " " : msg); }
+
+    public void limpiarCampos() {
+        txtDni.setText(""); txtNombres.setText(""); txtApellidos.setText("");
+        txtContrasena.setText(""); txtFechaNacimiento.setText(""); txtCorreo.setText("");
+        for (javax.swing.JLabel l : new javax.swing.JLabel[]{lblErrorDni, lblErrorNombres,
+                lblErrorApellidos, lblErrorContrasena, lblErrorFecha, lblErrorCorreo}) {
+            l.setText(" ");
+        }
+    }
 }

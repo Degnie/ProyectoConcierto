@@ -7,121 +7,188 @@ import java.time.LocalDate;
 import java.time.Period;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.Arrays;
 import javax.swing.JOptionPane;
+import javax.swing.SwingWorker;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import modelo.Cliente;
-import modelo.ClienteArreglo;
-import modelo.ArchivoUsuarios;
 import modelo.CodigoVerificacionException;
 import modelo.EdadInvalidaException;
-import vista.FrmLogin;
+import modelo.Persona;
+import repositorio.ClienteRepository;
+import vista.FrmPrincipal;
 import vista.FrmRegistroCliente;
-import proyectoentradas24200075.Principal;
 
 public class ControladorRegistro implements ActionListener {
-    
-    private FrmRegistroCliente vista;
-    private ClienteArreglo modeloClientes;
+
+    private static final DateTimeFormatter FORMATO_FECHA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    public ControladorRegistro(FrmRegistroCliente vista, ClienteArreglo modeloClientes) {
-        this.vista = vista;
-        this.modeloClientes = modeloClientes;
-        
-        // Escuchamos los botones de la vista de registro
+    private final FrmPrincipal principal;
+    private final FrmRegistroCliente vista;
+    private final ClienteRepository clienteRepository;
+
+    public ControladorRegistro(FrmPrincipal principal, ClienteRepository clienteRepository) {
+        this.principal = principal;
+        this.vista = principal.getVistaRegistro();
+        this.clienteRepository = clienteRepository;
+
         this.vista.getBtnRegistrar().addActionListener(this);
         this.vista.getBtnRegresar().addActionListener(this);
+
+        DocumentListener revalidar = new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { validarFormulario(); }
+            @Override public void removeUpdate(DocumentEvent e) { validarFormulario(); }
+            @Override public void changedUpdate(DocumentEvent e) { validarFormulario(); }
+        };
+        this.vista.getTxtDni().getDocument().addDocumentListener(revalidar);
+        this.vista.getTxtNombres().getDocument().addDocumentListener(revalidar);
+        this.vista.getTxtApellidos().getDocument().addDocumentListener(revalidar);
+        this.vista.getTxtContrasena().getDocument().addDocumentListener(revalidar);
+        this.vista.getTxtFechaNacimiento().getDocument().addDocumentListener(revalidar);
+        this.vista.getTxtCorreo().getDocument().addDocumentListener(revalidar);
+        validarFormulario();
+    }
+
+    // Revalida cada campo en vivo: pinta el JLabel de error correspondiente y solo habilita
+    // "Registrar" cuando todos los campos son válidos (reemplaza los JOptionPane de formato).
+    private boolean validarFormulario() {
+        boolean valido = true;
+
+        if (vista.getDni().isEmpty()) {
+            vista.setErrorDni(null);
+        } else if (!vista.getDni().matches("\\d{8}")) {
+            vista.setErrorDni("El DNI debe tener 8 dígitos numéricos.");
+            valido = false;
+        } else {
+            vista.setErrorDni(null);
+        }
+
+        if (vista.getNombres().isEmpty()) {
+            vista.setErrorNombres(null);
+            valido = false;
+        } else {
+            vista.setErrorNombres(null);
+        }
+
+        if (vista.getApellidos().isEmpty()) {
+            vista.setErrorApellidos("Requerido.");
+            valido = false;
+        } else {
+            vista.setErrorApellidos(null);
+        }
+
+        int largoContrasena = vista.getTxtContrasena().getPassword().length;
+        if (largoContrasena == 0) {
+            vista.setErrorContrasena(null);
+            valido = false;
+        } else if (largoContrasena < 4) {
+            vista.setErrorContrasena("Mínimo 4 caracteres.");
+            valido = false;
+        } else {
+            vista.setErrorContrasena(null);
+        }
+
+        String fechaTexto = vista.getFechaNacimiento();
+        if (fechaTexto.isEmpty()) {
+            vista.setErrorFecha(null);
+            valido = false;
+        } else {
+            try {
+                validarMayoriaDeEdad(LocalDate.parse(fechaTexto, FORMATO_FECHA));
+                vista.setErrorFecha(null);
+            } catch (DateTimeParseException ex) {
+                vista.setErrorFecha("Formato esperado: dd/MM/aaaa.");
+                valido = false;
+            } catch (EdadInvalidaException ex) {
+                vista.setErrorFecha(ex.getMessage());
+                valido = false;
+            }
+        }
+
+        String correo = vista.getCorreo();
+        if (correo.isEmpty()) {
+            vista.setErrorCorreo(null);
+            valido = false;
+        } else if (!correo.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            vista.setErrorCorreo("Correo inválido (ej. nombre@dominio.com).");
+            valido = false;
+        } else {
+            vista.setErrorCorreo(null);
+        }
+
+        if (vista.getDni().isEmpty() || vista.getNombres().isEmpty() || vista.getApellidos().isEmpty()
+                || largoContrasena == 0 || fechaTexto.isEmpty() || correo.isEmpty()) {
+            valido = false;
+        }
+
+        vista.getBtnRegistrar().setEnabled(valido);
+        return valido;
     }
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        // CASO 1: Clic en Registrar
         if (e.getSource() == vista.getBtnRegistrar()) {
-            String dni = vista.getDni();
-            String nombres = vista.getNombres();
-            String apellidos = vista.getApellidos();
-            String contrasena = vista.getContrasena();
-            String fechaNacimientoTexto = vista.getFechaNacimiento();
-            String correo = vista.getCorreo();
-
-            if (dni.isEmpty() || nombres.isEmpty() || apellidos.isEmpty() || contrasena.isEmpty() || fechaNacimientoTexto.isEmpty() || correo.isEmpty()) {
-                JOptionPane.showMessageDialog(vista, "Todos los campos son obligatorios.");
+            if (!validarFormulario()) {
                 return;
             }
-
-            if (!correo.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
-                JOptionPane.showMessageDialog(vista, "Ingrese un correo válido (ej. nombre@dominio.com).");
-                return;
-            }
-
-            // Validación de DNI: Numérico y 8 dígitos
-            if (!dni.matches("\\d{8}")) {
-                JOptionPane.showMessageDialog(vista, "El DNI debe tener exactamente 8 dígitos numéricos.");
-                return;
-            }
-
-            // Validación de mayoría de edad (>= 18 años), con manejo de excepciones
-            try {
-                LocalDate fechaNacimiento = LocalDate.parse(fechaNacimientoTexto, DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-                validarMayoriaDeEdad(fechaNacimiento);
-            } catch (DateTimeParseException ex) {
-                JOptionPane.showMessageDialog(vista, "La fecha de nacimiento debe tener el formato dd/MM/aaaa.");
-                return;
-            } catch (EdadInvalidaException ex) {
-                JOptionPane.showMessageDialog(vista, ex.getMessage());
-                return;
-            }
-            
-            // Validación de contraseña: Mínimo 4 caracteres
-            if (contrasena.length() < 4) {
-                JOptionPane.showMessageDialog(vista, "La contraseña debe tener al menos 4 caracteres.");
-                return;
-            }
-            
-            // Validación de comas para evitar corrupción del archivo txt
-            if (dni.contains(",") || nombres.contains(",") || apellidos.contains(",") || contrasena.contains(",") || correo.contains(",")) {
-                JOptionPane.showMessageDialog(vista, "Los datos no pueden contener comas (',').");
-                return;
-            }
-
-            // Verificamos si ya existe el DNI
-            if (modeloClientes.buscarPorDni(dni) != null) {
-                JOptionPane.showMessageDialog(vista, "El DNI ingresado ya se encuentra registrado.");
-                return;
-            }
-
-            // Envío (simulado) de código de verificación al correo, obligatorio para completar el registro
-            try {
-                verificarCorreo(correo);
-            } catch (CodigoVerificacionException ex) {
-                JOptionPane.showMessageDialog(vista, ex.getMessage());
-                return;
-            }
-
-            // Hasheamos la contraseña de forma segura para producción
-            String contrasenaHasheada = modelo.Persona.hashPassword(contrasena);
-            Cliente nuevoCliente = new Cliente(nombres, apellidos, dni, contrasenaHasheada, correo);
-            
-            // Lo agregamos al arreglo estático y al repositorio profesional
-            boolean exito = modeloClientes.agregar(nuevoCliente);
-            
-            if (exito) {
-                proyectoentradas24200075.Principal.clienteRepository.save(nuevoCliente);
-                // PERSISTENCIA: Guardamos la lista actualizada en el archivo de texto
-                ArchivoUsuarios.guardarClientes(modeloClientes);
-                
-                JOptionPane.showMessageDialog(vista, "¡Cliente registrado con éxito!");
-                regresarAlLogin();
-            } else {
-                JOptionPane.showMessageDialog(vista, "Error: El almacenamiento de clientes está lleno.");
-            }
-        }
-        
-        // CASO 2: Clic en Regresar
-        else if (e.getSource() == vista.getBtnRegresar()) {
+            registrar();
+        } else if (e.getSource() == vista.getBtnRegresar()) {
             regresarAlLogin();
         }
     }
-    
+
+    private void registrar() {
+        String dni = vista.getDni();
+        String nombres = vista.getNombres();
+        String apellidos = vista.getApellidos();
+        char[] contrasena = vista.getContrasenaChars();
+        String correo = vista.getCorreo();
+
+        try {
+            verificarCorreo(correo);
+        } catch (CodigoVerificacionException ex) {
+            Arrays.fill(contrasena, '0');
+            JOptionPane.showMessageDialog(vista, ex.getMessage());
+            return;
+        }
+
+        vista.getBtnRegistrar().setEnabled(false);
+        new SwingWorker<Boolean, Void>() {
+            @Override
+            protected Boolean doInBackground() {
+                if (clienteRepository.findByDni(dni) != null) {
+                    return false;
+                }
+                String salt = Persona.generarSalt();
+                String hash = Persona.hashPassword(contrasena, salt);
+                Cliente nuevoCliente = new Cliente(nombres, apellidos, dni, hash, salt, correo);
+                return clienteRepository.save(nuevoCliente);
+            }
+
+            @Override
+            protected void done() {
+                Arrays.fill(contrasena, '0');
+                vista.getBtnRegistrar().setEnabled(true);
+                boolean exito;
+                try {
+                    exito = get();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(vista, "Error al registrar: " + ex.getMessage());
+                    return;
+                }
+                if (exito) {
+                    JOptionPane.showMessageDialog(vista, "¡Cliente registrado con éxito!");
+                    vista.limpiarCampos();
+                    regresarAlLogin();
+                } else {
+                    JOptionPane.showMessageDialog(vista, "El DNI ingresado ya se encuentra registrado.");
+                }
+            }
+        }.execute();
+    }
+
     // ponytail: envío de correo simulado (código mostrado en pantalla en vez de enviarse por SMTP).
     // Para correo real, reemplazar solo el JOptionPane de "envío" por una llamada JavaMail/SMTP;
     // la generación y validación del código no cambian.
@@ -141,14 +208,11 @@ public class ControladorRegistro implements ActionListener {
     private void validarMayoriaDeEdad(LocalDate fechaNacimiento) throws EdadInvalidaException {
         int edad = Period.between(fechaNacimiento, LocalDate.now()).getYears();
         if (edad < 18) {
-            throw new EdadInvalidaException("Debe ser mayor de edad (18 años) para registrarse. Edad calculada: " + edad + ".");
+            throw new EdadInvalidaException("Debe ser mayor de edad (18 años). Edad calculada: " + edad + ".");
         }
     }
 
     private void regresarAlLogin() {
-        FrmLogin frmLogin = new FrmLogin();
-        new ControladorLogin(frmLogin, modeloClientes);
-        frmLogin.setVisible(true);
-        vista.dispose();
+        principal.mostrarLogin();
     }
 }
