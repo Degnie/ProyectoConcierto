@@ -9,6 +9,8 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import modelo.Cliente;
+import modelo.Tarjeta;
+import modelo.TipoTarjeta;
 import util.RegistradorErrores;
 
 public class OracleClienteRepository implements ClienteRepository {
@@ -55,7 +57,8 @@ public class OracleClienteRepository implements ClienteRepository {
 
     @Override
     public Cliente findByDni(String dni) {
-        String sql = "SELECT dni, nombres, apellidos, correo, contrasena_hash, salt, puntos, fecha_nacimiento "
+        String sql = "SELECT dni, nombres, apellidos, correo, contrasena_hash, salt, puntos, fecha_nacimiento, "
+                + "tarjeta_tipo, tarjeta_enmascarada, tarjeta_fecha, payment_token "
                 + "FROM usuarios WHERE dni = ? AND rol = 'CLIENTE'";
         try (Connection con = DatabaseConnection.getInstance().getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -72,7 +75,8 @@ public class OracleClienteRepository implements ClienteRepository {
 
     @Override
     public List<Cliente> findAll() {
-        String sql = "SELECT dni, nombres, apellidos, correo, contrasena_hash, salt, puntos, fecha_nacimiento "
+        String sql = "SELECT dni, nombres, apellidos, correo, contrasena_hash, salt, puntos, fecha_nacimiento, "
+                + "tarjeta_tipo, tarjeta_enmascarada, tarjeta_fecha, payment_token "
                 + "FROM usuarios WHERE rol = 'CLIENTE'";
         List<Cliente> resultado = new ArrayList<>();
         try (Connection con = DatabaseConnection.getInstance().getConnection();
@@ -97,12 +101,41 @@ public class OracleClienteRepository implements ClienteRepository {
                     rs.getString("dni"), rs.getString("contrasena_hash"), rs.getString("salt"),
                     rs.getString("correo"), fechaNacimiento);
             cliente.setPuntos(rs.getInt("puntos"));
+
+            // Tarjeta guardada de una sesión anterior ("guardar para futuras compras"); si el
+            // cliente nunca lo pidió, las 4 columnas vienen NULL y el cliente arranca sin tarjeta.
+            String tipoTarjeta = rs.getString("tarjeta_tipo");
+            if (tipoTarjeta != null) {
+                Tarjeta tarjeta = Tarjeta.reconstruirDesdeBaseDeDatos(TipoTarjeta.valueOf(tipoTarjeta),
+                        rs.getString("tarjeta_enmascarada"), rs.getString("tarjeta_fecha"));
+                cliente.hidratarTarjeta(tarjeta, rs.getString("payment_token"));
+            }
             return cliente;
         } catch (Exception ex) {
             // Los datos en Oracle ya pasaron esta validación al guardarse; si de todos modos
             // fallara (fila corrupta o migrada a mano), es un error de integridad, no de negocio.
             throw new RuntimeException("Registro de cliente inconsistente en la base de datos: dni="
                     + rs.getString("dni") + " - " + ex.getMessage(), ex);
+        }
+    }
+
+    @Override
+    public boolean guardarTarjeta(String dni, Tarjeta tarjeta, String paymentToken) {
+        if (dni == null || tarjeta == null || paymentToken == null) return false;
+        String sql = "UPDATE usuarios SET tarjeta_tipo = ?, tarjeta_enmascarada = ?, tarjeta_fecha = ?, "
+                + "payment_token = ? WHERE dni = ? AND rol = 'CLIENTE'";
+        try (Connection con = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setQueryTimeout(TIMEOUT_SEGUNDOS);
+            ps.setString(1, tarjeta.getTipo().name());
+            ps.setString(2, tarjeta.getNumeroEnmascarado());
+            ps.setString(3, tarjeta.getFecha());
+            ps.setString(4, paymentToken);
+            ps.setString(5, dni);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            RegistradorErrores.registrar("OracleClienteRepository.guardarTarjeta", e);
+            throw new RuntimeException("El servicio no pudo procesar la transacción.");
         }
     }
 }

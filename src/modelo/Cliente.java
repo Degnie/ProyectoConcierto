@@ -108,6 +108,15 @@ public class Cliente extends Persona {
         }
     }
 
+    // Reemplaza la tarjeta en memoria por la que se acaba de leer de Oracle (login), igual que
+    // hidratarVentas hace con el historial. Solo se llama si el cliente eligió "guardar tarjeta
+    // para futuras compras" en una sesión anterior; si no hay nada guardado, tarjeta y
+    // paymentToken vienen null y el cliente arranca la sesión sin tarjeta, como hoy.
+    public void hidratarTarjeta(Tarjeta tarjeta, String paymentToken) {
+        this.tarjeta = tarjeta;
+        this.paymentToken = paymentToken;
+    }
+
     public int getPuntos() {
         return puntos;
     }

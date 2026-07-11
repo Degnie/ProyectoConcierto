@@ -4,11 +4,63 @@
  */
 package vista;
 
+import com.formdev.flatlaf.FlatClientProperties;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Cursor;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.event.KeyEvent;
+import javax.swing.AbstractButton;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JCheckBox;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
+import javax.swing.JTabbedPane;
+import javax.swing.JTextField;
+import javax.swing.SwingConstants;
+import javax.swing.table.DefaultTableCellRenderer;
+import util.IconRegistry;
+import util.Tipografia;
+
 /**
  *
  * @author lopez
  */
 public class FrmCliente extends javax.swing.JPanel {
+
+    private static final Color COLOR_ACENTO = new Color(0x0F, 0x62, 0xFE);
+    private static final Color COLOR_SECUNDARIO = new Color(0x8D, 0x8D, 0x8D);
+    private static final Color COLOR_ERROR = new Color(0xDA, 0x1E, 0x28);
+    private static final Color COLOR_BORDE_TARJETA = new Color(0xE0, 0xE0, 0xE0);
+    private static final Color COLOR_FONDO = new Color(0xF4, 0xF4, 0xF4);
+
+    // Primer ítem de cmbTipoTarjeta: no es un TipoTarjeta real, así que el controlador debe
+    // tratarlo como "todavía no elegido nada" antes de llamar TipoTarjeta.valueOf(...).
+    public static final String PLACEHOLDER_TIPO_TARJETA = "Elija el tipo de tarjeta";
+
+    // Validación inline del formulario de tarjeta (reemplaza el JOptionPane de errores puntuales):
+    // el componente vive acá, en vista/, listo para que el controlador lo use en vez de un diálogo
+    // modal. Cablear procesarRegistroTarjeta() para que llame a mostrarErrorTarjeta(...) es un
+    // cambio en controlador/, fuera del alcance permitido para esta pasada.
+    private final JLabel lblErrorTarjeta = new JLabel(" ");
+
+    // "Guardar tarjeta para futuras compras": si está marcado al registrar, el controlador
+    // persiste tipo/enmascarado/fecha/token en Oracle para que la próxima sesión arranque con la
+    // tarjeta ya activa (ver Cliente.hidratarTarjeta). Sin marcar, la tarjeta solo dura la sesión.
+    private final JCheckBox chkGuardarTarjeta = new JCheckBox("Guardar esta tarjeta para futuras compras");
+
+    // Indicador de que ya hay una tarjeta lista para pagar (registrada esta sesión, o recordada de
+    // una anterior): así el cliente sabe que puede ir directo a "COMPRAR" sin volver a llenar el
+    // formulario, y que llenarlo de nuevo simplemente reemplaza la tarjeta activa.
+    private final JLabel lblTarjetaActiva = new JLabel(" ");
 
     /**
      * Creates new form FrmCliente
@@ -26,6 +78,374 @@ public class FrmCliente extends javax.swing.JPanel {
         if (formateador instanceof javax.swing.text.DefaultFormatter) {
             ((javax.swing.text.DefaultFormatter) formateador).setCommitsOnValidEdit(true);
         }
+
+        reestructurarLayout();
+    }
+
+    // Reorganiza los mismos componentes que initComponents() (regenerado por el Form Editor de
+    // NetBeans; no se toca) ya construyó dentro de jPanel1, sacándolos de su GroupLayout original
+    // hacia un JTabbedPane con dos contextos separados. Un Component en Swing solo puede tener un
+    // padre a la vez, así que basta con volver a hacer contenedorNuevo.add(componente) para
+    // "sacarlo" de jPanel1 — PERO si jPanel1 sigue siendo hijo de `this`, su GroupLayout se vuelve
+    // a ejecutar en la próxima validate() (p. ej. al mostrar la ventana) y "reclama" de vuelta a
+    // sus componentes originales, revirtiendo el reparenting silenciosamente. Por eso jPanel1 se
+    // remueve de `this` explícitamente antes de reconstruir nada.
+    private void reestructurarLayout() {
+        remove(jPanel1);
+
+        JTabbedPane pestañas = new JTabbedPane();
+        pestañas.addTab("Nueva Compra", construirPestañaCompra());
+        pestañas.addTab("Mis Compras", construirPestañaHistorial());
+        pestañas.setMnemonicAt(0, KeyEvent.VK_1);
+        pestañas.setMnemonicAt(1, KeyEvent.VK_2);
+        pestañas.getAccessibleContext().setAccessibleDescription(
+                "Alterna entre iniciar una compra nueva y ver el historial de compras");
+
+        setLayout(new BorderLayout());
+        add(construirEncabezado(), BorderLayout.NORTH);
+        add(pestañas, BorderLayout.CENTER);
+
+        aplicarAccesibilidadYCursores();
+    }
+
+    // Barra superior persistente (visible en ambas pestañas): identidad del cliente, puntos y
+    // cierre de sesión, para no obligar a cambiar de pestaña solo para ver cuántos puntos tiene.
+    private JPanel construirEncabezado() {
+        jLabel1.setFont(Tipografia.TITULO.deriveFont(16f));
+        jLabel1.setIcon(IconRegistry.get(IconRegistry.USER, 18));
+        jLabel1.setIconTextGap(8);
+        jLabel11.setFont(Tipografia.CUERPO);
+        lblPuntos.setFont(Tipografia.CUERPO.deriveFont(Font.BOLD));
+        lblPuntos.setForeground(COLOR_ACENTO);
+
+        JPanel izquierda = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        izquierda.setOpaque(false);
+        izquierda.add(jLabel1);
+        izquierda.add(jLabel11);
+        izquierda.add(lblPuntos);
+
+        btnCerrarSesion.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        JPanel derecha = new JPanel(new FlowLayout(FlowLayout.RIGHT, 16, 8));
+        derecha.setOpaque(false);
+        derecha.add(btnCerrarSesion);
+
+        JPanel encabezado = new JPanel(new BorderLayout());
+        encabezado.setOpaque(true);
+        encabezado.setBackground(Color.WHITE);
+        encabezado.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, COLOR_BORDE_TARJETA));
+        encabezado.add(izquierda, BorderLayout.WEST);
+        encabezado.add(derecha, BorderLayout.EAST);
+        return encabezado;
+    }
+
+    // Embudo reordenado de arriba hacia abajo: 1) qué comprar (concierto/zona), 2) cuánto y con
+    // qué descuento (cantidad + puntos), 3) cómo pagar (tarjeta). Antes el formulario de tarjeta
+    // aparecía primero, pidiendo datos de pago antes de que el usuario supiera siquiera qué zona
+    // había elegido.
+    private JScrollPane construirPestañaCompra() {
+        JPanel columna = new JPanel();
+        columna.setLayout(new BoxLayout(columna, BoxLayout.Y_AXIS));
+        columna.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
+        columna.setBackground(COLOR_FONDO);
+        columna.setOpaque(true);
+
+        columna.add(seccionZonas());
+        columna.add(Box.createVerticalStrut(16));
+        columna.add(seccionResumenCompra());
+        columna.add(Box.createVerticalStrut(16));
+        columna.add(seccionTarjetaYPago());
+
+        JScrollPane scroll = new JScrollPane(columna);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.getViewport().setBackground(COLOR_FONDO);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        return scroll;
+    }
+
+    private JPanel seccionZonas() {
+        JPanel tarjeta = crearTarjeta();
+        tarjeta.add(tituloSeccion("Concierto y zona", IconRegistry.CARD));
+        tarjeta.add(Box.createVerticalStrut(8));
+        tarjeta.add(fila(jLabel10, cmbConciertosCliente));
+        tarjeta.add(Box.createVerticalStrut(16));
+
+        jLabel7.setFont(Tipografia.CUERPO.deriveFont(Font.BOLD));
+        alinearIzquierda(jLabel7);
+        tarjeta.add(jLabel7);
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        // JTable.getPreferredScrollableViewportSize() devuelve un fijo (450,400) sin importar la
+        // cantidad real de filas; sin fijar el preferredSize acá, ese valor domina el BoxLayout y
+        // la tabla se come toda la columna, dejando "Tarjeta y pago" fuera de la vista inicial.
+        jScrollPane1.setAlignmentX(Component.LEFT_ALIGNMENT);
+        jScrollPane1.setPreferredSize(new Dimension(600, 140));
+        jScrollPane1.setMaximumSize(new Dimension(Integer.MAX_VALUE, 140));
+        tblZonasDisponibles.getAccessibleContext().setAccessibleName("Zonas disponibles");
+        tblZonasDisponibles.getAccessibleContext().setAccessibleDescription(
+                "Tabla de zonas del concierto seleccionado, con precio y entradas disponibles");
+        tarjeta.add(jScrollPane1);
+        return tarjeta;
+    }
+
+    private JPanel seccionResumenCompra() {
+        JPanel tarjeta = crearTarjeta();
+        tarjeta.add(tituloSeccion("Cantidad y puntos", null));
+        tarjeta.add(Box.createVerticalStrut(8));
+        tarjeta.add(fila(jLabel8, spnCantidadEntradas));
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        alinearIzquierda(chkAplicarPuntos);
+        chkAplicarPuntos.setFont(Tipografia.CUERPO);
+        chkAplicarPuntos.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        tarjeta.add(chkAplicarPuntos);
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        JPanel totales = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 0));
+        totales.setOpaque(false);
+        alinearIzquierda(totales);
+        lblDescuentoPuntos.setFont(Tipografia.CUERPO);
+        lblTotal.setFont(Tipografia.CUERPO.deriveFont(Font.BOLD, 16f));
+        totales.add(lblDescuentoPuntos);
+        totales.add(lblTotal);
+        tarjeta.add(totales);
+        return tarjeta;
+    }
+
+    private JPanel seccionTarjetaYPago() {
+        JPanel tarjeta = crearTarjeta();
+        tarjeta.add(tituloSeccion("Tarjeta y pago", IconRegistry.LOCK));
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        lblTarjetaActiva.setFont(Tipografia.CUERPO.deriveFont(Font.BOLD));
+        lblTarjetaActiva.setForeground(COLOR_ACENTO);
+        lblTarjetaActiva.setIcon(IconRegistry.get(IconRegistry.CHECK_CIRCLE, 16));
+        lblTarjetaActiva.setIconTextGap(8);
+        lblTarjetaActiva.setVisible(false);
+        alinearIzquierda(lblTarjetaActiva);
+        tarjeta.add(lblTarjetaActiva);
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        // Placeholder inicial: sin esto el combo arranca en "VISA" y el descuento de VISA ya
+        // queda aplicado en el total antes de que el cliente elija nada, lo que parece un
+        // descuento "de regalo" no pedido. Con el placeholder seleccionado no se aplica descuento
+        // (precio de lista) hasta que el cliente elige un tipo real.
+        if (cmbTipoTarjeta.getItemCount() == 0 || !PLACEHOLDER_TIPO_TARJETA.equals(cmbTipoTarjeta.getItemAt(0))) {
+            cmbTipoTarjeta.insertItemAt(PLACEHOLDER_TIPO_TARJETA, 0);
+        }
+        cmbTipoTarjeta.setSelectedIndex(0);
+        tarjeta.add(fila(jLabelTipoTarjeta, cmbTipoTarjeta));
+        lblRequisitosTarjeta.setFont(Tipografia.VALIDACION);
+        lblRequisitosTarjeta.setForeground(COLOR_SECUNDARIO);
+        alinearIzquierda(lblRequisitosTarjeta);
+        tarjeta.add(lblRequisitosTarjeta);
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        tarjeta.add(fila(jLabel3, txtTarjNumero));
+        tarjeta.add(Box.createVerticalStrut(8));
+        tarjeta.add(fila(jLabel5, txtTarjFecha));
+        tarjeta.add(Box.createVerticalStrut(8));
+        tarjeta.add(fila(jLabel6, txtTarjCvv));
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        lblErrorTarjeta.setFont(Tipografia.VALIDACION);
+        lblErrorTarjeta.setForeground(COLOR_ERROR);
+        lblErrorTarjeta.setVisible(false);
+        alinearIzquierda(lblErrorTarjeta);
+        tarjeta.add(lblErrorTarjeta);
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        chkGuardarTarjeta.setFont(Tipografia.CUERPO);
+        chkGuardarTarjeta.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        alinearIzquierda(chkGuardarTarjeta);
+        tarjeta.add(chkGuardarTarjeta);
+        tarjeta.add(Box.createVerticalStrut(16));
+
+        // Sistema de compra al instante: no tiene sentido un paso separado de "registrar tarjeta"
+        // antes de comprar (¿quién completaría ese trámite solo para guardar una tarjeta sin
+        // comprar nada?). btnRegistrarTarjeta (generado por el Form Editor, no se toca) queda sin
+        // usar y oculto; "Comprar" tokeniza la tarjeta del formulario si hace falta y compra en el
+        // mismo clic (ver ControladorCliente.asegurarTarjetaActiva).
+        btnRegistrarTarjeta.setVisible(false);
+
+        btnComprarEntrada.setFont(Tipografia.CUERPO.deriveFont(Font.BOLD));
+        btnComprarEntrada.putClientProperty(FlatClientProperties.STYLE,
+                "background:#0F62FE;foreground:#FFFFFF;"
+                + "hoverBackground:#0353E9;pressedBackground:#0043CE;borderWidth:0;");
+        alinearIzquierda(btnComprarEntrada);
+        tarjeta.add(btnComprarEntrada);
+        return tarjeta;
+    }
+
+    // Contexto separado del checkout: el historial no compite visualmente con el formulario de
+    // pago ni obliga a hacer scroll más allá de lo necesario para llegar a "Comprar".
+    private JPanel construirPestañaHistorial() {
+        JPanel columna = new JPanel();
+        columna.setLayout(new BoxLayout(columna, BoxLayout.Y_AXIS));
+        columna.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
+        columna.setBackground(COLOR_FONDO);
+        columna.setOpaque(true);
+
+        JPanel tarjeta = crearTarjeta();
+        tarjeta.add(tituloSeccion("Mis compras", IconRegistry.CHECK_CIRCLE));
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        jScrollPane3.setAlignmentX(Component.LEFT_ALIGNMENT);
+        jScrollPane3.setPreferredSize(new Dimension(600, 220));
+        jScrollPane3.setMaximumSize(new Dimension(Integer.MAX_VALUE, 220));
+        // El controlador reemplaza el modelo de la tabla en cada refresh (setModel(dtm)), lo que
+        // recrea las columnas y borra cualquier renderer puesto directamente sobre ellas. Por eso
+        // el renderer centrado se reaplica cada vez que cambia el modelo, en vez de una sola vez.
+        tblMisCompras.addPropertyChangeListener("model", ev -> centrarColumnasMisCompras());
+        centrarColumnasMisCompras();
+        tblMisCompras.getAccessibleContext().setAccessibleName("Historial de compras");
+        tblMisCompras.getAccessibleContext().setAccessibleDescription(
+                "Tabla con tus compras anteriores: concierto, zona, cantidad, monto y estado");
+        tarjeta.add(jScrollPane3);
+        tarjeta.add(Box.createVerticalStrut(16));
+
+        // "liberar" (texto generado por el Form Editor) no comunica qué hace sobre una compra ya
+        // pagada; el propio dominio ya llama a esta operación "anular" (Venta.anular(),
+        // Cliente.anularVenta(), VentaRepository.anularVentaPersistida), así que el botón usa el
+        // mismo término en vez de inventar uno nuevo ("devolución" implicaría un reembolso que
+        // este sistema no modela).
+        btnLiberarEntrada.setText("Anular Compra");
+        btnLiberarEntrada.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnLiberarEntrada.putClientProperty(FlatClientProperties.STYLE,
+                "background:$Panel.background;foreground:#DA1E28;borderColor:#DA1E28;focusedBorderColor:#DA1E28;");
+        alinearIzquierda(btnLiberarEntrada);
+        tarjeta.add(btnLiberarEntrada);
+
+        columna.add(tarjeta);
+        return columna;
+    }
+
+    // Columna 0 (Concierto) queda a la izquierda como el resto de las tablas de la app; Zona,
+    // Cantidad, Monto Total y Estado se centran para no dejar todo el texto/números pegados al
+    // borde con un espacio en blanco enorme a la derecha de cada celda.
+    private void centrarColumnasMisCompras() {
+        DefaultTableCellRenderer centrado = new DefaultTableCellRenderer();
+        centrado.setHorizontalAlignment(SwingConstants.CENTER);
+        var columnas = tblMisCompras.getColumnModel();
+        for (int i = 1; i < columnas.getColumnCount(); i++) {
+            columnas.getColumn(i).setCellRenderer(centrado);
+        }
+    }
+
+    private JLabel tituloSeccion(String texto, String icono) {
+        JLabel titulo = new JLabel(texto);
+        titulo.setFont(Tipografia.CUERPO.deriveFont(Font.BOLD, 16f));
+        if (icono != null) {
+            titulo.setIcon(IconRegistry.get(icono, 18));
+            titulo.setIconTextGap(8);
+        }
+        alinearIzquierda(titulo);
+        return titulo;
+    }
+
+    // Fila estándar de formulario: etiqueta arriba, 8px de separación, campo abajo (sistema de
+    // grilla de 8pt). Los campos de texto/spinner se estiran al ancho de la tarjeta; los combo
+    // quedan a su ancho natural, que se ve mejor sin estirar de borde a borde.
+    private JPanel fila(JLabel etiqueta, JComponent campo) {
+        etiqueta.setFont(Tipografia.CUERPO);
+        alinearIzquierda(etiqueta);
+        alinearIzquierda(campo);
+        if (campo instanceof JTextField || campo instanceof JSpinner) {
+            campo.setMaximumSize(new Dimension(Integer.MAX_VALUE, campo.getPreferredSize().height));
+        }
+
+        JPanel fila = new JPanel();
+        fila.setLayout(new BoxLayout(fila, BoxLayout.Y_AXIS));
+        fila.setOpaque(false);
+        alinearIzquierda(fila);
+        fila.add(etiqueta);
+        fila.add(Box.createVerticalStrut(8));
+        fila.add(campo);
+        return fila;
+    }
+
+    private JPanel crearTarjeta() {
+        JPanel tarjeta = new JPanel();
+        tarjeta.setLayout(new BoxLayout(tarjeta, BoxLayout.Y_AXIS));
+        tarjeta.setOpaque(true);
+        tarjeta.setBackground(Color.WHITE);
+        tarjeta.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(COLOR_BORDE_TARJETA, 1),
+                BorderFactory.createEmptyBorder(16, 16, 16, 16)));
+        alinearIzquierda(tarjeta);
+        return tarjeta;
+    }
+
+    private void alinearIzquierda(JComponent c) {
+        c.setAlignmentX(Component.LEFT_ALIGNMENT);
+    }
+
+    // Nombre/descripción accesible (lector de pantalla) y cursor de mano en cada control
+    // interactivo. Los estilos de color/tipografía puntuales ya quedaron aplicados en cada
+    // sección de arriba; acá solo lo transversal a todos los controles.
+    private void aplicarAccesibilidadYCursores() {
+        cmbConciertosCliente.getAccessibleContext().setAccessibleName("Concierto");
+        cmbConciertosCliente.getAccessibleContext().setAccessibleDescription(
+                "Selecciona el concierto para ver sus zonas disponibles");
+        spnCantidadEntradas.getAccessibleContext().setAccessibleName("Cantidad de entradas");
+        spnCantidadEntradas.getAccessibleContext().setAccessibleDescription(
+                "Cantidad de entradas a comprar, de 1 a 4");
+        chkAplicarPuntos.getAccessibleContext().setAccessibleDescription(
+                "Aplica el descuento por puntos de fidelidad acumulados a esta compra");
+        cmbTipoTarjeta.getAccessibleContext().setAccessibleName("Tipo de tarjeta");
+        cmbTipoTarjeta.getAccessibleContext().setAccessibleDescription(
+                "Marca de la tarjeta a registrar: VISA, Mastercard, Diners o Amex");
+        txtTarjNumero.getAccessibleContext().setAccessibleName("Número de tarjeta");
+        txtTarjFecha.getAccessibleContext().setAccessibleName("Fecha de vencimiento");
+        txtTarjFecha.getAccessibleContext().setAccessibleDescription("Formato MM/AA");
+        txtTarjCvv.getAccessibleContext().setAccessibleName("CVV");
+        btnComprarEntrada.getAccessibleContext().setAccessibleDescription(
+                "Tokeniza la tarjeta si hace falta y confirma la compra de las entradas seleccionadas");
+        btnLiberarEntrada.getAccessibleContext().setAccessibleDescription(
+                "Anula la compra seleccionada en la tabla y libera sus entradas");
+
+        for (AbstractButton boton : new AbstractButton[]{
+            btnComprarEntrada, btnLiberarEntrada
+        }) {
+            boton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        }
+    }
+
+    // Ganchos de validación inline para el formulario de tarjeta (ver comentario del campo
+    // lblErrorTarjeta más arriba): quedan listos para que controlador/ los invoque.
+    public void mostrarErrorTarjeta(String mensaje) {
+        lblErrorTarjeta.setText(mensaje);
+        lblErrorTarjeta.setVisible(true);
+    }
+
+    public void ocultarErrorTarjeta() {
+        lblErrorTarjeta.setText(" ");
+        lblErrorTarjeta.setVisible(false);
+    }
+
+    public boolean isGuardarTarjetaSeleccionado() {
+        return chkGuardarTarjeta.isSelected();
+    }
+
+    public void limpiarGuardarTarjeta() {
+        chkGuardarTarjeta.setSelected(false);
+    }
+
+    // Se muestra apenas hay una tarjeta lista para pagar (recordada de una sesión anterior, o
+    // recién registrada en esta) para que el cliente sepa que puede ir directo a "COMPRAR".
+    public void mostrarTarjetaActiva(String descripcion) {
+        lblTarjetaActiva.setText(descripcion);
+        lblTarjetaActiva.setVisible(true);
+    }
+
+    public void ocultarTarjetaActiva() {
+        lblTarjetaActiva.setText(" ");
+        lblTarjetaActiva.setVisible(false);
+    }
+
+    // "CLIENTE" (genérico) reemplazado por un saludo personalizado; jLabel1 es el mismo JLabel de
+    // siempre, solo cambia el texto.
+    public void setNombreCliente(String nombres) {
+        jLabel1.setText("Hola, " + nombres);
     }
 
     /**
@@ -363,7 +783,8 @@ public class FrmCliente extends javax.swing.JPanel {
     }// </editor-fold>//GEN-END:initComponents
 
 // 1. Getters para que el Controlador escuche las acciones (Botones)
-public javax.swing.JButton getBtnRegistrarTarjeta() { return btnRegistrarTarjeta; }
+// btnRegistrarTarjeta ya no tiene getter: queda oculto (ver seccionTarjetaYPago) y sin
+// controlador que lo escuche, "Comprar" es el único gatillo de tokenización.
 public javax.swing.JButton getBtnComprarEntrada() { return btnComprarEntrada; }
 public javax.swing.JButton getBtnLiberarEntrada() { return btnLiberarEntrada; }
 

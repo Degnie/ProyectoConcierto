@@ -4,17 +4,246 @@
  */
 package vista;
 
+import com.formdev.flatlaf.FlatClientProperties;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Cursor;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
+import javax.swing.JTextField;
+import javax.swing.SwingConstants;
+import javax.swing.table.DefaultTableCellRenderer;
+import util.IconRegistry;
+import util.Tipografia;
+
 /**
  *
  * @author lopez
  */
 public class FrmAdministrador extends javax.swing.JPanel {
 
+    private static final Color COLOR_BORDE_TARJETA = new Color(0xE0, 0xE0, 0xE0);
+    private static final Color COLOR_FONDO = new Color(0xF4, 0xF4, 0xF4);
+
     /**
      * Creates new form FrmAdministrador
      */
     public FrmAdministrador() {
         initComponents();
+        normalizarYCentrar();
+        reestructurarLayout();
+    }
+
+    // Igual que en FrmCliente/FrmLogin: jPanel1 (todo el formulario generado por el Form Editor,
+    // initComponents() no se toca) se remueve de `this` y sus componentes se reparentan a un
+    // layout nuevo en tarjetas. Removerlo de `this` es imprescindible -- si quedara colgando como
+    // hijo huérfano, su GroupLayout se re-ejecutaría en el próximo validate() y "reclamaría" de
+    // vuelta a los componentes ya reparentados (bug real que se encontró y corrigió en FrmCliente).
+    private void reestructurarLayout() {
+        remove(jPanel1);
+        setLayout(new BorderLayout());
+        add(construirEncabezado(), BorderLayout.NORTH);
+        add(construirContenido(), BorderLayout.CENTER);
+    }
+
+    private JPanel construirEncabezado() {
+        jLabel1.setFont(Tipografia.TITULO.deriveFont(18f));
+        jLabel1.setIcon(IconRegistry.get(IconRegistry.LOCK, 20));
+        jLabel1.setIconTextGap(8);
+
+        JPanel izquierda = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        izquierda.setOpaque(false);
+        izquierda.add(jLabel1);
+
+        btnRegresar.setText("Regresar");
+        btnRegresar.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnRegresar.putClientProperty(FlatClientProperties.STYLE,
+                "background:$Panel.background;foreground:#8D8D8D;borderColor:#8D8D8D;focusedBorderColor:#8D8D8D;");
+        btnCerrarSesion.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnCerrarSesion.putClientProperty(FlatClientProperties.STYLE,
+                "background:$Panel.background;foreground:#8D8D8D;borderColor:#8D8D8D;focusedBorderColor:#8D8D8D;");
+
+        JPanel derecha = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+        derecha.setOpaque(false);
+        derecha.add(btnRegresar);
+        derecha.add(btnCerrarSesion);
+
+        JPanel encabezado = new JPanel(new BorderLayout());
+        encabezado.setOpaque(true);
+        encabezado.setBackground(Color.WHITE);
+        encabezado.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, COLOR_BORDE_TARJETA));
+        encabezado.add(izquierda, BorderLayout.WEST);
+        encabezado.add(derecha, BorderLayout.EAST);
+        return encabezado;
+    }
+
+    // Tres secciones apiladas, mismo patrón de tarjetas que FrmCliente: 1) elegir/crear concierto,
+    // 2) crear zonas para el concierto elegido (con su tabla debajo), 3) ventas realizadas.
+    private JScrollPane construirContenido() {
+        JPanel columna = new JPanel();
+        columna.setLayout(new BoxLayout(columna, BoxLayout.Y_AXIS));
+        columna.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
+        columna.setBackground(COLOR_FONDO);
+        columna.setOpaque(true);
+
+        columna.add(seccionConcierto());
+        columna.add(Box.createVerticalStrut(16));
+        columna.add(seccionZonas());
+        columna.add(Box.createVerticalStrut(16));
+        columna.add(seccionVentas());
+
+        JScrollPane scroll = new JScrollPane(columna);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.getViewport().setBackground(COLOR_FONDO);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        return scroll;
+    }
+
+    private JPanel seccionConcierto() {
+        JPanel tarjeta = crearTarjeta();
+        tarjeta.add(tituloSeccion("Concierto", IconRegistry.CARD));
+        tarjeta.add(Box.createVerticalStrut(8));
+        tarjeta.add(fila(jLabel2, cmbConciertos));
+        tarjeta.add(Box.createVerticalStrut(16));
+
+        btnNuevoConcierto.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnNuevoConcierto.putClientProperty(FlatClientProperties.STYLE,
+                "background:$Panel.background;foreground:#0F62FE;borderColor:#0F62FE;focusedBorderColor:#0F62FE;");
+        alinearIzquierda(btnNuevoConcierto);
+        tarjeta.add(btnNuevoConcierto);
+        return tarjeta;
+    }
+
+    private JPanel seccionZonas() {
+        JPanel tarjeta = crearTarjeta();
+        tarjeta.add(tituloSeccion("Zonas del concierto", null));
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        tarjeta.add(fila(jLabel3, txtZonaNombre));
+        tarjeta.add(Box.createVerticalStrut(8));
+        tarjeta.add(fila(jLabel4, txtZonaCapacidad));
+        tarjeta.add(Box.createVerticalStrut(8));
+        tarjeta.add(fila(jLabel5, txtZonaPrecio));
+        tarjeta.add(Box.createVerticalStrut(16));
+
+        btnAgregarZona.setFont(Tipografia.CUERPO.deriveFont(Font.BOLD));
+        btnAgregarZona.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnAgregarZona.putClientProperty(FlatClientProperties.STYLE,
+                "background:#0F62FE;foreground:#FFFFFF;"
+                + "hoverBackground:#0353E9;pressedBackground:#0043CE;borderWidth:0;");
+        alinearIzquierda(btnAgregarZona);
+        tarjeta.add(btnAgregarZona);
+        tarjeta.add(Box.createVerticalStrut(16));
+
+        jScrollPane2.setAlignmentX(Component.LEFT_ALIGNMENT);
+        jScrollPane2.setPreferredSize(new Dimension(600, 140));
+        jScrollPane2.setMaximumSize(new Dimension(Integer.MAX_VALUE, 140));
+        tblZonas.getAccessibleContext().setAccessibleName("Zonas del concierto");
+        tarjeta.add(jScrollPane2);
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        btnEditarSeleccion.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        btnEditarSeleccion.putClientProperty(FlatClientProperties.STYLE,
+                "background:$Panel.background;foreground:#0F62FE;borderColor:#0F62FE;focusedBorderColor:#0F62FE;");
+        alinearIzquierda(btnEditarSeleccion);
+        tarjeta.add(btnEditarSeleccion);
+        return tarjeta;
+    }
+
+    private JPanel seccionVentas() {
+        JPanel tarjeta = crearTarjeta();
+        jLabel6.setText("Ventas realizadas");
+        tarjeta.add(tituloSeccion(jLabel6.getText(), IconRegistry.CHECK_CIRCLE));
+        tarjeta.add(Box.createVerticalStrut(8));
+
+        jScrollPane3.setAlignmentX(Component.LEFT_ALIGNMENT);
+        jScrollPane3.setPreferredSize(new Dimension(600, 180));
+        jScrollPane3.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180));
+        tblVentas.getAccessibleContext().setAccessibleName("Ventas realizadas");
+        tarjeta.add(jScrollPane3);
+        return tarjeta;
+    }
+
+    private JLabel tituloSeccion(String texto, String icono) {
+        JLabel titulo = new JLabel(texto);
+        titulo.setFont(Tipografia.CUERPO.deriveFont(Font.BOLD, 16f));
+        if (icono != null) {
+            titulo.setIcon(IconRegistry.get(icono, 18));
+            titulo.setIconTextGap(8);
+        }
+        alinearIzquierda(titulo);
+        return titulo;
+    }
+
+    // Fila estándar de formulario: etiqueta arriba, 8px de separación, campo abajo (mismo patrón
+    // de FrmCliente). Los campos de texto se estiran al ancho de la tarjeta; el combo queda a su
+    // ancho natural.
+    private JPanel fila(JLabel etiqueta, JComponent campo) {
+        etiqueta.setFont(Tipografia.CUERPO);
+        alinearIzquierda(etiqueta);
+        alinearIzquierda(campo);
+        if (campo instanceof JTextField) {
+            campo.setMaximumSize(new Dimension(Integer.MAX_VALUE, campo.getPreferredSize().height));
+        }
+
+        JPanel fila = new JPanel();
+        fila.setLayout(new BoxLayout(fila, BoxLayout.Y_AXIS));
+        fila.setOpaque(false);
+        alinearIzquierda(fila);
+        fila.add(etiqueta);
+        fila.add(Box.createVerticalStrut(8));
+        fila.add(campo);
+        return fila;
+    }
+
+    private JPanel crearTarjeta() {
+        JPanel tarjeta = new JPanel();
+        tarjeta.setLayout(new BoxLayout(tarjeta, BoxLayout.Y_AXIS));
+        tarjeta.setOpaque(true);
+        tarjeta.setBackground(Color.WHITE);
+        tarjeta.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(COLOR_BORDE_TARJETA, 1),
+                BorderFactory.createEmptyBorder(16, 16, 16, 16)));
+        alinearIzquierda(tarjeta);
+        return tarjeta;
+    }
+
+    private void alinearIzquierda(JComponent c) {
+        c.setAlignmentX(Component.LEFT_ALIGNMENT);
+    }
+
+    // jLabel4/jLabel5 quedan en minúscula en el Form Editor (initComponents(), no se toca) mientras
+    // el resto de las etiquetas de esta misma pantalla usan mayúscula inicial (jLabel2, jLabel3) —
+    // se normaliza acá en código plano. También se centran las columnas de tblZonas/tblVentas
+    // (salvo la primera, que identifica la fila) reaplicando el renderer cada vez que el
+    // controlador reemplaza el modelo (setModel), igual que en FrmCliente.
+    private void normalizarYCentrar() {
+        jLabel4.setText("Capacidad");
+        jLabel5.setText("Precio");
+
+        tblZonas.addPropertyChangeListener("model", ev -> centrarColumnasDesde(tblZonas, 1));
+        centrarColumnasDesde(tblZonas, 1);
+        tblVentas.addPropertyChangeListener("model", ev -> centrarColumnasDesde(tblVentas, 1));
+        centrarColumnasDesde(tblVentas, 1);
+    }
+
+    private static void centrarColumnasDesde(JTable tabla, int primeraColumnaACentrar) {
+        DefaultTableCellRenderer centrado = new DefaultTableCellRenderer();
+        centrado.setHorizontalAlignment(SwingConstants.CENTER);
+        var columnas = tabla.getColumnModel();
+        for (int i = primeraColumnaACentrar; i < columnas.getColumnCount(); i++) {
+            columnas.getColumn(i).setCellRenderer(centrado);
+        }
     }
 
     /**

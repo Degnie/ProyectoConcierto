@@ -9,7 +9,15 @@ CREATE TABLE usuarios (
     salt             VARCHAR2(32)  NOT NULL,
     rol              VARCHAR2(10)  NOT NULL CHECK (rol IN ('ADMIN', 'CLIENTE')),
     puntos           NUMBER        DEFAULT 0,
-    fecha_nacimiento DATE          NOT NULL
+    fecha_nacimiento DATE          NOT NULL,
+    -- Tarjeta guardada opcionalmente por el cliente ("guardar para futuras compras"). Nunca se
+    -- persiste el número completo ni el CVV -- solo lo que Tarjeta.java ya conserva en memoria:
+    -- tipo, número enmascarado (****1234) y fecha, más el payment token simulado de la
+    -- tokenización. Un cliente sin tarjeta guardada tiene las 4 columnas en NULL.
+    tarjeta_tipo        VARCHAR2(20),
+    tarjeta_enmascarada VARCHAR2(20),
+    tarjeta_fecha       VARCHAR2(5),
+    payment_token       VARCHAR2(20)
 );
 
 CREATE TABLE conciertos (
@@ -62,3 +70,4 @@ CREATE TABLE entradas (
 -- ALTER TABLE usuarios ADD CONSTRAINT uq_usuarios_correo UNIQUE (correo);
 -- ALTER TABLE zonas ADD version NUMBER DEFAULT 0 NOT NULL;
 -- (crear ventas y entradas con los CREATE TABLE de arriba si no existían)
+-- ALTER TABLE usuarios ADD (tarjeta_tipo VARCHAR2(20), tarjeta_enmascarada VARCHAR2(20), tarjeta_fecha VARCHAR2(5), payment_token VARCHAR2(20));

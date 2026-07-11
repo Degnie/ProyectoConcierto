@@ -61,7 +61,7 @@ public class ControladorAdministrador implements ActionListener {
 
     private void actualizarTablas() {
         int selIdx = vista.getCmbConciertos().getSelectedIndex();
-        DefaultTableModel dtmZonas = new DefaultTableModel(new Object[]{"nombre", "capacidad", "precio"}, 0);
+        DefaultTableModel dtmZonas = new DefaultTableModel(new Object[]{"Nombre", "Capacidad", "Precio"}, 0);
 
         if (selIdx >= 0 && listaConciertos != null && selIdx < listaConciertos.size()) {
             Concierto conciertoActual = listaConciertos.get(selIdx);
@@ -79,7 +79,7 @@ public class ControladorAdministrador implements ActionListener {
 
         // Lee directo de Oracle (JOIN, ver OracleVentaRepository.cargarResumenVentasParaAdmin):
         // Cliente.getVentas() solo está hidratado para el cliente con sesión activa, no sirve acá.
-        DefaultTableModel dtmVentas = new DefaultTableModel(new Object[]{"cliente", "zona", "monto", "concierto"}, 0);
+        DefaultTableModel dtmVentas = new DefaultTableModel(new Object[]{"Cliente", "Zona", "Monto", "Concierto"}, 0);
         if (ventaRepository != null) {
             for (Object[] fila : ventaRepository.cargarResumenVentasParaAdmin()) {
                 dtmVentas.addRow(fila);

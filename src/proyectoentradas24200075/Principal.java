@@ -1,13 +1,18 @@
 package proyectoentradas24200075;
 
+import com.formdev.flatlaf.FlatLightLaf;
 import conexion.ConfiguracionApp;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.Properties;
 import javax.swing.JOptionPane;
+import javax.swing.UIManager;
 import modelo.Concierto;
+import util.RegistradorErrores;
+import util.Tipografia;
 import vista.FrmPrincipal;
 import controlador.ControladorLogin;
 import controlador.ControladorRegistro;
@@ -43,6 +48,8 @@ public class Principal {
             return;
         }
 
+        inicializarAspectoVisual();
+
         // Fail-fast: si falta config.properties o alguna clave crítica, se avisa y se aborta acá
         // mismo, antes de intentar levantar la UI o abrir una conexión JDBC que fallaría más
         // adelante con un stacktrace menos claro para quien esté instalando el sistema.
@@ -60,6 +67,22 @@ public class Principal {
 
         principal.mostrarLogin();
         principal.setVisible(true);
+    }
+
+    // FlatLaf + fuente Inter se instalan una sola vez, antes de construir cualquier JFrame/JDialog:
+    // el L&F y la fuente por defecto de UIManager solo aplican a componentes creados después de
+    // este punto. El color de acento (#0F62FE) se registra como "extra default" antes de setup(),
+    // que es el momento en que FlatLaf lee esas claves para derivar los estilos de sus componentes.
+    private static void inicializarAspectoVisual() {
+        try {
+            FlatLightLaf.setGlobalExtraDefaults(Map.of("@accentColor", "#0F62FE"));
+            FlatLightLaf.setup();
+            UIManager.put("defaultFont", Tipografia.CUERPO);
+        } catch (Exception ex) {
+            // Un fallo acá no debe impedir que la app arranque: sigue con el L&F por defecto de
+            // Swing en vez de dejar al usuario sin ninguna interfaz.
+            RegistradorErrores.registrar("Principal.inicializarAspectoVisual", ex);
+        }
     }
 
     // Devuelve un mensaje describiendo el problema, o null si la configuración está completa.

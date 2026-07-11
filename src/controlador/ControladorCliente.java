@@ -2,6 +2,7 @@ package controlador;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.text.SimpleDateFormat;
 import javax.swing.JOptionPane;
 import javax.swing.SwingWorker;
 import javax.swing.table.DefaultTableModel;
@@ -24,6 +25,9 @@ import vista.FrmPrincipal;
 public class ControladorCliente implements ActionListener {
 
     private static final int CANTIDAD_MAXIMA_POR_COMPRA = 4;
+    // SimpleDateFormat no es thread-safe, pero acá solo se usa desde el EDT (nunca dentro de un
+    // SwingWorker de fondo), así que una única instancia compartida es segura.
+    private static final SimpleDateFormat FORMATO_FECHA = new SimpleDateFormat("dd/MM/yyyy");
 
     private final FrmPrincipal principal;
     private final FrmCliente vista;
@@ -44,7 +48,6 @@ public class ControladorCliente implements ActionListener {
         this.conciertoRepository = conciertoRepository;
         this.ventaRepository = ventaRepository;
 
-        this.vista.getBtnRegistrarTarjeta().addActionListener(this);
         this.vista.getBtnComprarEntrada().addActionListener(this);
         this.vista.getBtnLiberarEntrada().addActionListener(this);
         this.vista.getBtnCerrarSesion().addActionListener(this);
@@ -64,22 +67,58 @@ public class ControladorCliente implements ActionListener {
         actualizarRequisitosTarjeta();
     }
 
+    // Refleja si ya hay una tarjeta lista para pagar (recordada de una sesión anterior guardada en
+    // Oracle, o registrada en esta sesión): el cliente no necesita volver a llenar el formulario
+    // para comprar, salvo que quiera cambiar de tarjeta.
+    private void actualizarIndicadorTarjeta() {
+        Tarjeta tarjeta = clienteLogueado.getTarjeta();
+        if (tarjeta != null) {
+            vista.mostrarTarjetaActiva("Tarjeta activa: " + tarjeta.getTipo() + " " + tarjeta.getNumeroEnmascarado());
+        } else {
+            vista.ocultarTarjetaActiva();
+        }
+    }
+
+    // El primer ítem del combo es un placeholder ("Elija el tipo de tarjeta"), no un TipoTarjeta
+    // real -- sin esto, el combo arrancaría en VISA y su descuento ya se aplicaría al total antes
+    // de que el cliente eligiera nada, como si fuera un regalo no pedido. Cualquier lugar que lea
+    // el combo pasa por acá en vez de TipoTarjeta.valueOf(...) directo.
+    private TipoTarjeta obtenerTipoTarjetaSeleccionado() {
+        String seleccion = (String) vista.getCmbTipoTarjeta().getSelectedItem();
+        if (seleccion == null || FrmCliente.PLACEHOLDER_TIPO_TARJETA.equals(seleccion)) {
+            return null;
+        }
+        return TipoTarjeta.valueOf(seleccion);
+    }
+
     // Muestra cuántos dígitos exige la marca elegida en el combo (VISA/MASTERCARD/DINERS/AMEX)
     private void actualizarRequisitosTarjeta() {
-        String seleccion = (String) vista.getCmbTipoTarjeta().getSelectedItem();
-        TipoTarjeta tipo = TipoTarjeta.valueOf(seleccion);
-        vista.setRequisitosTarjeta(tipo.describirRequisitos());
+        TipoTarjeta tipo = obtenerTipoTarjetaSeleccionado();
+        vista.setRequisitosTarjeta(tipo != null ? tipo.describirRequisitos() : " ");
     }
 
     private void inicializarFormulario() {
+        vista.setNombreCliente(clienteLogueado.getNombres());
         vista.setPuntosAcumulados(clienteLogueado.getPuntos());
         vista.limpiarResumenCompra();
+        actualizarIndicadorTarjeta();
+
+        // El combo de tipo de tarjeta es la única fuente de verdad para el descuento en preview
+        // (ver actualizarResumenCompra); si ya hay una tarjeta activa (recordada de una sesión
+        // anterior), el combo arranca alineado con ella para que el preview y el cobro real
+        // coincidan desde el primer momento, en vez de mostrar el descuento del primer ítem
+        // (VISA) mientras la tarjeta real es de otro tipo.
+        if (clienteLogueado.getTarjeta() != null) {
+            vista.getCmbTipoTarjeta().setSelectedItem(clienteLogueado.getTarjeta().getTipo().name());
+        }
 
         vista.getCmbConciertosCliente().removeActionListener(this);
         vista.getCmbConciertosCliente().removeAllItems();
         if (listaConciertos != null && !listaConciertos.isEmpty()) {
             for (Concierto c : listaConciertos) {
-                vista.getCmbConciertosCliente().addItem(c.getNombre());
+                // Con el mismo tour repetido varias veces (ej. 3 fechas de un mismo artista), el
+                // nombre solo no alcanza para distinguir cuál es cuál en el combo.
+                vista.getCmbConciertosCliente().addItem(c.getNombre() + " — " + FORMATO_FECHA.format(c.getFecha()));
             }
         }
         vista.getCmbConciertosCliente().addActionListener(this);
@@ -134,19 +173,22 @@ public class ControladorCliente implements ActionListener {
         vista.getTblMisCompras().setModel(dtm);
     }
 
-    // Preview del checkout: sin tarjeta registrada, sin zona/concierto seleccionados, o con una
-    // cantidad fuera del rango permitido (1-4), no hay nada realizable que mostrar. Con datos
-    // válidos, calcula el descuento de tarjeta, el techo de puntos redimibles para esta compra
-    // puntual, y el total final según si el checkbox está marcado o no. Todo esto vive como
-    // fórmulas puras en Venta (calcularDescuentoTarjeta/calcularMaximoPuntosRedimibles/
-    // calcularTotalFinal) — acá solo se leen los datos de la UI y se pintan los resultados.
+    // Preview del checkout: sin zona/concierto seleccionados, o con una cantidad fuera del rango
+    // permitido (1-4), no hay nada realizable que mostrar. El descuento de tarjeta siempre sigue
+    // al combo (cmbTipoTarjeta) — es la única fuente de verdad, tanto para el preview como para el
+    // cobro real: actionPerformed invalida la tarjeta activa apenas el combo deja de coincidir con
+    // ella (ver la rama de cmbTipoTarjeta), así el preview de acá nunca puede prometer un total
+    // que después el cobro real no respete. Con datos válidos, calcula el descuento de tarjeta, el
+    // techo de puntos redimibles para esta compra puntual, y el total final según si el checkbox
+    // está marcado o no. Todo esto vive como fórmulas puras en Venta
+    // (calcularDescuentoTarjeta/calcularMaximoPuntosRedimibles/calcularTotalFinal) — acá solo se
+    // leen los datos de la UI y se pintan los resultados.
     private void actualizarResumenCompra() {
-        Tarjeta tarjeta = clienteLogueado.getTarjeta();
         int conIdx = vista.getCmbConciertosCliente().getSelectedIndex();
         int zonIdx = vista.getTblZonasDisponibles().getSelectedRow();
         int cantidad = vista.getCantidadEntradas();
 
-        if (tarjeta == null || conIdx < 0 || conIdx >= listaConciertos.size() || zonIdx < 0
+        if (conIdx < 0 || conIdx >= listaConciertos.size() || zonIdx < 0
                 || cantidad < 1 || cantidad > CANTIDAD_MAXIMA_POR_COMPRA) {
             vista.limpiarResumenCompra();
             return;
@@ -158,7 +200,11 @@ public class ControladorCliente implements ActionListener {
         }
         Zona zonaSel = conciertoSel.getZonas().get(zonIdx);
 
-        double descuentoTarjeta = conciertoSel.getDescuento(tarjeta.getTipo());
+        // Sin tipo de tarjeta elegido todavía (placeholder), se muestra el precio de lista (0%
+        // descuento) en vez de nada — así el total aparece apenas hay zona+cantidad, tal como
+        // pide el embudo, sin prometer un descuento que el cliente todavía no eligió.
+        TipoTarjeta tipoParaDescuento = obtenerTipoTarjetaSeleccionado();
+        double descuentoTarjeta = tipoParaDescuento != null ? conciertoSel.getDescuento(tipoParaDescuento) : 0.0;
         int montoConDescuentoTarjeta = Venta.calcularMontoConDescuentoTarjeta(zonaSel.getPrecio(), cantidad, descuentoTarjeta);
         int maxPuntosRedimibles = Venta.calcularMaximoPuntosRedimibles(montoConDescuentoTarjeta, clienteLogueado.getPuntos());
 
@@ -227,9 +273,19 @@ public class ControladorCliente implements ActionListener {
         if (e.getSource() == vista.getCmbConciertosCliente()) {
             actualizarTablaZonas();
         } else if (e.getSource() == vista.getCmbTipoTarjeta()) {
+            // Si ya había una tarjeta activa de OTRO tipo, cambiar el combo significa "quiero
+            // pagar con un tipo distinto": se invalida (no se borra el guardado en Oracle, solo la
+            // activa en memoria) para que la próxima compra tokenice la nueva en vez de cobrar en
+            // silencio con el descuento de una tarjeta que ya dejó de ser la seleccionada.
+            Tarjeta tarjetaActiva = clienteLogueado.getTarjeta();
+            TipoTarjeta tipoElegido = obtenerTipoTarjetaSeleccionado();
+            if (tarjetaActiva != null && tipoElegido != null && tarjetaActiva.getTipo() != tipoElegido) {
+                clienteLogueado.eliminarTarjeta();
+                clienteLogueado.setPaymentToken(null);
+                actualizarIndicadorTarjeta();
+            }
             actualizarRequisitosTarjeta();
-        } else if (e.getSource() == vista.getBtnRegistrarTarjeta()) {
-            procesarRegistroTarjeta();
+            actualizarResumenCompra();
         } else if (e.getSource() == vista.getBtnComprarEntrada()) {
             procesarCompraEntrada();
         } else if (e.getSource() == vista.getBtnLiberarEntrada()) {
@@ -239,32 +295,56 @@ public class ControladorCliente implements ActionListener {
         }
     }
 
-    private void procesarRegistroTarjeta() {
+    // Punto único que garantiza una tarjeta lista para pagar antes de confirmar la compra. No hay
+    // botón separado de "Registrar Tarjeta" (sistema de compra al instante: no tiene sentido un
+    // trámite aparte solo para guardar una tarjeta sin comprar nada) — "Comprar" es el único
+    // gatillo de tokenización:
+    //  - Si el cliente escribió algo en el número de tarjeta, quiere pagar con una tarjeta nueva o
+    //    distinta a la activa (si había una): se tokeniza esa, sin importar si ya había otra.
+    //  - Si el campo está vacío y ya hay una tarjeta activa (de esta sesión o recordada de una
+    //    anterior), se usa esa tal cual.
+    //  - Si el campo está vacío y no hay ninguna activa, intentarRegistrarTarjeta() dispara el
+    //    mensaje de "complete los datos de la tarjeta".
+    private boolean asegurarTarjetaActiva() {
+        boolean quiereOtraTarjeta = !vista.getTarjNumero().isEmpty();
+        if (!quiereOtraTarjeta && clienteLogueado.getPaymentToken() != null) {
+            return true;
+        }
+        return intentarRegistrarTarjeta();
+    }
+
+    // Devuelve true si al terminar hay una tarjeta tokenizada y activa.
+    private boolean intentarRegistrarTarjeta() {
+        TipoTarjeta tipoElegido = obtenerTipoTarjetaSeleccionado();
+        if (tipoElegido == null) {
+            JOptionPane.showMessageDialog(vista, "Elija el tipo de tarjeta antes de continuar.");
+            return false;
+        }
+
         String nroTarjeta = vista.getTarjNumero();
         String fechaVenc = vista.getTarjFecha();
         String cvv = vista.getTarjCvv();
-        TipoTarjeta tipoElegido = TipoTarjeta.valueOf((String) vista.getCmbTipoTarjeta().getSelectedItem());
 
         if (nroTarjeta.isEmpty() || fechaVenc.isEmpty() || cvv.isEmpty()) {
-            JOptionPane.showMessageDialog(vista, "Por favor, complete todos los campos de la tarjeta.");
-            return;
+            JOptionPane.showMessageDialog(vista, "Complete los datos de la tarjeta para pagar.");
+            return false;
         }
 
         if (!nroTarjeta.matches("\\d+") || !cvv.matches("\\d+")) {
             JOptionPane.showMessageDialog(vista, "El número de tarjeta y el CVV deben ser numéricos.");
-            return;
+            return false;
         }
 
         if (!fechaVenc.matches("\\d{2}/\\d{2}")) {
             JOptionPane.showMessageDialog(vista, "La fecha de vencimiento debe tener el formato MM/AA (ej. 12/28).");
-            return;
+            return false;
         }
 
         TipoTarjeta tipoDetectado = TipoTarjeta.detectar(nroTarjeta);
         if (tipoDetectado != tipoElegido) {
             JOptionPane.showMessageDialog(vista, "Seleccionaste " + tipoElegido + " pero el número ingresado corresponde a "
                     + (tipoDetectado == TipoTarjeta.DESCONOCIDA ? "un emisor no reconocido" : tipoDetectado) + ".");
-            return;
+            return false;
         }
 
         try {
@@ -275,18 +355,26 @@ public class ControladorCliente implements ActionListener {
 
             JOptionPane.showMessageDialog(vista, "Tarjeta " + tarjetaSegura.getTipo() + " tokenizada con éxito (Token: " + tokenPagoSimulado + ").");
             vista.limpiarFormularioTarjeta();
+            actualizarIndicadorTarjeta();
             actualizarResumenCompra();
+
+            // "Guardar para futuras compras": persiste tipo/enmascarado/fecha/token en Oracle para
+            // que la próxima sesión ya arranque con esta tarjeta activa (ver mapear() en
+            // OracleClienteRepository). Sin marcar el check, la tarjeta solo vive en esta sesión,
+            // igual que antes.
+            if (vista.isGuardarTarjetaSeleccionado()) {
+                guardarEnSegundoPlano("ControladorCliente.procesarRegistroTarjeta.guardarTarjeta",
+                        () -> clienteRepository.guardarTarjeta(clienteLogueado.getDni(), tarjetaSegura, tokenPagoSimulado),
+                        () -> {});
+            }
+            return true;
         } catch (TarjetaInvalidaException ex) {
             JOptionPane.showMessageDialog(vista, ex.getMessage());
+            return false;
         }
     }
 
     private void procesarCompraEntrada() {
-        if (clienteLogueado.getPaymentToken() == null) {
-            JOptionPane.showMessageDialog(vista, "Para realizar una compra, primero debe asociar una tarjeta de pago tokenizada.");
-            return;
-        }
-
         int conIdx = vista.getCmbConciertosCliente().getSelectedIndex();
         int zonIdx = vista.getTblZonasDisponibles().getSelectedRow();
 
@@ -306,6 +394,14 @@ public class ControladorCliente implements ActionListener {
 
         if (zonaSel.getCantidadEntradasDisponibles() < cantidad) {
             JOptionPane.showMessageDialog(vista, "No quedan suficientes entradas disponibles en esta zona.");
+            return;
+        }
+
+        // Última validación, justo antes de calcular el monto: si todavía no hay una tarjeta
+        // activa, se intenta tokenizar con lo que haya en el formulario (mismo tipo elegido en el
+        // combo que ya se usó para el preview del total) — el cliente no necesita un clic previo
+        // en "Registrar Tarjeta" para el caso común de pagar con una tarjeta nueva.
+        if (!asegurarTarjetaActiva()) {
             return;
         }
 
@@ -353,13 +449,13 @@ public class ControladorCliente implements ActionListener {
     private void procesarLiberacionEntrada() {
         int filaSel = vista.getTblMisCompras().getSelectedRow();
         if (filaSel < 0) {
-            JOptionPane.showMessageDialog(vista, "Seleccione una compra de su lista para liberarla.");
+            JOptionPane.showMessageDialog(vista, "Seleccione una compra de su lista para anularla.");
             return;
         }
 
         int confirm = JOptionPane.showConfirmDialog(vista,
-            "¿Está seguro de que desea liberar esta entrada? Se le restarán los puntos correspondientes.",
-            "Confirmar liberación", JOptionPane.YES_NO_OPTION);
+            "¿Está seguro de que desea anular esta compra? Se le restarán los puntos correspondientes.",
+            "Confirmar anulación", JOptionPane.YES_NO_OPTION);
 
         if (confirm != JOptionPane.YES_OPTION) {
             return;
@@ -371,7 +467,7 @@ public class ControladorCliente implements ActionListener {
                 guardarEnSegundoPlano("ControladorCliente.procesarLiberacionEntrada",
                     () -> ventaRepository.anularVentaPersistida(clienteLogueado, ventaALiberar),
                     () -> {
-                        JOptionPane.showMessageDialog(vista, "Operación de liberación procesada correctamente.");
+                        JOptionPane.showMessageDialog(vista, "Compra anulada correctamente.");
                         vista.setPuntosAcumulados(clienteLogueado.getPuntos());
                         actualizarTablaZonas();
                         actualizarTablaCompras();

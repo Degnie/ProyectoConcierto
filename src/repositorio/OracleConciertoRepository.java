@@ -91,7 +91,9 @@ public class OracleConciertoRepository implements ConciertoRepository {
 
     @Override
     public List<Concierto> findAll() {
-        String sqlConciertos = "SELECT id, nombre, fecha_ms FROM conciertos";
+        // Orden alfabético por nombre y, dentro del mismo tour, por fecha: con varias fechas de un
+        // mismo artista, aparecen en orden cronológico entre sí en vez de en orden arbitrario.
+        String sqlConciertos = "SELECT id, nombre, fecha_ms FROM conciertos ORDER BY nombre, fecha_ms";
         String sqlZonas = "SELECT id, nombre, capacidad, precio FROM zonas WHERE concierto_id = ?";
         // Solo se persisten las entradas realmente vendidas (ver schema.sql); reconstruir la zona
         // significa generar el set completo de entradas disponibles y marcar como vendidas

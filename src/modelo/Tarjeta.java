@@ -24,6 +24,19 @@ public class Tarjeta {
         this.numeroEnmascarado = "**** **** **** " + numeroCompleto.substring(numeroCompleto.length() - 4);
     }
 
+    private Tarjeta(TipoTarjeta tipo, String numeroEnmascarado, String fecha) {
+        this.tipo = tipo;
+        this.numeroEnmascarado = numeroEnmascarado;
+        this.fecha = fecha;
+    }
+
+    // Reconstrucción desde Oracle (tarjeta guardada de una sesión anterior): los datos ya pasaron
+    // Luhn/CVV/vigencia la primera vez que se registraron, así que no hace falta -ni se puede,
+    // porque nunca se persiste el número completo ni el CVV- revalidarlos acá.
+    public static Tarjeta reconstruirDesdeBaseDeDatos(TipoTarjeta tipo, String numeroEnmascarado, String fecha) {
+        return new Tarjeta(tipo, numeroEnmascarado, fecha);
+    }
+
     // Algoritmo de Luhn (mod-10), el mismo checksum que usan las redes de tarjetas reales
     private static boolean pasaLuhn(String numero) {
         int suma = 0;
