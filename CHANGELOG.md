@@ -1,5 +1,48 @@
 # Changelog
 
+## [Sin publicar] - 2026-07-10 (iteración 2: SMTP real, rutas de despliegue, UX asíncrona)
+
+Esta iteración retoma dos puntos que la entrega anterior había dejado pospuestos explícitamente
+(envío real de correo y semilla del admin) y corrige dos riesgos detectados en la revisión
+posterior: retención de contraseñas en memoria más allá de lo necesario, y una ruta de
+configuración que solo funcionaba por casualidad al ejecutar el `.jar` empaquetado.
+
+### Cambios implementados
+
+**Envío real de correo (reemplaza la simulación de la iteración anterior)**
+- `servicio/EmailService.java` (nuevo): servicio SMTP aislado, único punto del código que conoce Jakarta Mail. Expone un solo método público, `enviarCodigoVerificacion(String correoDestino, String codigo) throws Exception`; toda la configuración de sesión (`host`, `port`, `auth`, `starttls`, autenticación) queda encapsulada dentro de la clase.
+- Los parámetros SMTP se leen de `config.properties` (mismo archivo externo que las credenciales Oracle), bajo las claves `mail.smtp.host`, `mail.smtp.port`, `mail.smtp.auth`, `mail.smtp.starttls.enable`, `mail.smtp.user` y `mail.smtp.password`. Se agregaron a `config.properties.example` con comentario explicando el caso Gmail (requiere "App Password", no la clave de la cuenta).
+- Requiere agregar manualmente al classpath (mismo patrón que `ojdbc.jar`): `jakarta.mail-api.jar` + una implementación (`angus-mail.jar`, o `javax.mail.jar` si se prefiere la API clásica). Documentado en el `README.md`.
+- `ControladorRegistro` ya no muestra el código en un `JOptionPane` "(SIMULADO)"; ahora lo envía de verdad y solo pide al usuario que lo ingrese una vez confirmado el envío.
+
+**Resolución de rutas de despliegue**
+- `conexion/ConfiguracionApp.java` (nuevo): utilidad compartida que ubica `config.properties` junto al `.jar` en ejecución, usando `ProtectionDomain#getCodeSource()` en vez de asumir que el directorio de trabajo del proceso es el correcto. Si no encuentra el archivo ahí (caso típico: ejecución sin empaquetar desde el IDE), hace *fallback* al directorio de trabajo actual para no romper el flujo de desarrollo en NetBeans.
+- `conexion/DatabaseConnection.java` y `servicio/EmailService.java` usan ahora `ConfiguracionApp.resolverArchivo(...)` en vez de `new FileInputStream("config.properties")` directo.
+- Verificado con una prueba manual: `.jar` empaquetado en `C:\tmp\jartest\deploy\`, ejecutado desde un directorio de trabajo distinto (`C:\tmp\unrelated_cwd\`) — `config.properties` se resolvió correctamente junto al `.jar`, no en el `cwd`.
+
+**Concurrencia y flujo asíncrono (`ControladorRegistro`)**
+- El registro ahora se estructura en dos fases con `SwingWorker` independientes, ninguna bloquea el EDT:
+  1. **Fase correo**: genera el código, lo envía por SMTP en segundo plano; al terminar (`done()`), pide el código por diálogo.
+  2. **Fase persistencia**: solo se dispara si el código es correcto; hashea la contraseña y guarda el cliente en Oracle en segundo plano.
+- La excepción de dominio `CodigoVerificacionException` se preserva íntegra en el flujo (antes se evaluaba de forma síncrona; ahora se lanza/captura igual, solo que después de una fase async en vez de en línea).
+
+**Seguridad en memoria (corrección)**
+- `ControladorRegistro`: `Arrays.fill(contrasena, '0')` se ejecuta ahora *inmediatamente* después de `Persona.hashPassword(...)`, dentro de `doInBackground()` — antes se purgaba recién en `done()`, dejando la contraseña en claro viva en memoria durante todo el viaje de ida y vuelta al EDT.
+- Se aplicó la misma corrección en `ControladorLogin.loginAdmin` (mismo patrón, mismo defecto detectado por extensión al revisar la clase hermana).
+
+**UX asíncrona (`FrmPrincipal`)**
+- `iniciarCarga()` / `finalizarCarga()`: cursor `Cursor.WAIT_CURSOR` global y deshabilitación recursiva de todos los componentes interactivos mientras corre un `SwingWorker` de red/BD; restaurados en `done()`. Conectado a los flujos de login (cliente y admin) y a las dos fases de registro.
+- `mostrarLogin()` / `mostrarRegistro()`: invocan `limpiarFormulario()` / `limpiarCampos()` antes de mostrar la card, eliminando la retención "fantasma" de datos del usuario anterior al navegar por el `CardLayout`.
+- `FrmLogin` y `FrmRegistroCliente`: Enter en el campo de contraseña dispara el botón principal (`doClick()`), aprovechando que `JTextField`/`JPasswordField` ya emiten `actionPerformed` al presionar Enter — sin `KeyListener` a medida.
+
+### Decisiones alternativas evaluadas y descartadas en esta sesión
+
+- **Cifrado del password SMTP en `config.properties`**: la tarea pedía la clave "de forma encriptada/externa". Se optó por dejarla externa (fuera del control de versiones, igual que la clave de Oracle) mediante `.gitignore`, y no agregar cifrado a nivel de campo. Justificación: introducir cifrado de un solo secreto (sin tocar el de la BD) crea una inconsistencia de tratamiento entre credenciales del mismo archivo; cifrar ambas requeriría diseñar gestión de claves (dónde vive la clave maestra) que excede el alcance de esta entrega docente. Queda documentado como mejora futura.
+- **Reintentos automáticos / cola de reenvío si falla el SMTP**: se descartó por ahora; ante un fallo de envío se muestra el error y el usuario reintenta manualmente presionando "Registrar" de nuevo. Agregar reintentos con backoff es una mejora de robustez razonable pero no bloqueante para la entrega actual.
+- **Indicador de carga con `JProgressBar`/spinner visual en vez de solo cursor**: se evaluó agregar una barra de progreso indeterminada superpuesta, pero se prefirió el cursor de espera global (`Cursor.WAIT_CURSOR`) más deshabilitado recursivo de componentes por ser la solución más simple que ya cumple el requisito pedido ("alternar el estado del cursor... deshabilitar los paneles interactivos"); no se justificaba el componente adicional para esta iteración.
+- **Extender el binding de Enter a los diálogos modales de código de verificación**: el `JOptionPane.showInputDialog` que pide el código ya responde a Enter de forma nativa (comportamiento estándar de Swing para el botón por defecto del diálogo), así que no se agregó binding manual ahí.
+- **Actualizar la iteración anterior del CHANGELOG para quitar la marca de "pendiente" en envío de correo**: se decidió no reescribir el bloque anterior — un changelog documenta decisiones en el momento en que se tomaron; este bloque nuevo deja constancia de que ese punto pendiente ya se resolvió, sin alterar el registro histórico.
+
 ## [Sin publicar] - 2026-07-10
 
 ### Cambios implementados

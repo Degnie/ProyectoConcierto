@@ -15,6 +15,9 @@ public class FrmLogin extends javax.swing.JPanel {
      */
     public FrmLogin() {
         initComponents();
+        // JTextField/JPasswordField disparan su propio actionPerformed al presionar Enter;
+        // lo reenviamos al botón principal para no obligar al mouse (accesibilidad por teclado).
+        txtContrasena.addActionListener(ev -> btnLoginCliente.doClick());
     }
 
     /**
@@ -140,6 +143,13 @@ public class FrmLogin extends javax.swing.JPanel {
     }
 
     public void limpiarContrasena() {
+        txtContrasena.setText("");
+    }
+
+    // Limpieza profunda al volver a esta pantalla: sin esto, el DNI/clave del usuario anterior
+    // quedaría visible "fantasma" al navegar de vuelta al login vía CardLayout.
+    public void limpiarFormulario() {
+        txtDni.setText("");
         txtContrasena.setText("");
     }
     // Variables declaration - do not modify//GEN-BEGIN:variables

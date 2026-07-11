@@ -15,6 +15,9 @@ public class FrmRegistroCliente extends javax.swing.JPanel {
      */
     public FrmRegistroCliente() {
         initComponents();
+        // Enter en el campo de contraseña dispara "Registrar" (no hace nada si el botón está
+        // deshabilitado por validación pendiente, doClick() respeta setEnabled()).
+        txtContrasena.addActionListener(ev -> btnRegistrar.doClick());
     }
 
     /**

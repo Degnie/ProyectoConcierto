@@ -69,6 +69,7 @@ public class ControladorLogin implements ActionListener {
     // La consulta a la BD y el hashing corren fuera del Event Dispatch Thread para no congelar la UI
     private void loginCliente(String dni, char[] contrasena) {
         setControlesHabilitados(false);
+        principal.iniciarCarga();
         new SwingWorker<Cliente, Void>() {
             @Override
             protected Cliente doInBackground() {
@@ -82,6 +83,7 @@ public class ControladorLogin implements ActionListener {
 
             @Override
             protected void done() {
+                principal.finalizarCarga();
                 setControlesHabilitados(true);
                 vista.limpiarContrasena();
                 Cliente clienteEncontrado = get_();
@@ -108,21 +110,26 @@ public class ControladorLogin implements ActionListener {
 
     private void loginAdmin(String dni, char[] contrasena) {
         setControlesHabilitados(false);
+        principal.iniciarCarga();
         new SwingWorker<Boolean, Void>() {
             @Override
             protected Boolean doInBackground() {
                 CredencialAdmin credencial = usuarioRepository.buscarAdminPorDni(dni);
                 if (credencial == null) {
+                    Arrays.fill(contrasena, '0');
                     return false;
                 }
+                // Purga inmediata tras hashear, dentro del mismo hilo de background: la
+                // contraseña en claro no debe sobrevivir hasta el done() en el EDT.
                 String hashIngresado = Persona.hashPassword(contrasena, credencial.getSalt());
+                Arrays.fill(contrasena, '0');
                 return hashIngresado.equals(credencial.getContrasenaHash());
             }
 
             @Override
             protected void done() {
+                principal.finalizarCarga();
                 setControlesHabilitados(true);
-                Arrays.fill(contrasena, '0');
                 vista.limpiarContrasena();
                 boolean autenticado = get_();
                 if (autenticado) {

@@ -1,3 +1,13 @@
 db.url=jdbc:oracle:thin:@localhost:1521/XEPDB1
 db.user=proyecto_concierto
 db.password=cambiar_esta_clave
+
+# SMTP para el envio real del codigo de verificacion (servicio/EmailService.java).
+# Ejemplo con Gmail: host smtp.gmail.com, puerto 587, y mail.smtp.password debe ser
+# un "App Password" (clave de aplicacion), no la clave normal de la cuenta.
+mail.smtp.host=smtp.gmail.com
+mail.smtp.port=587
+mail.smtp.auth=true
+mail.smtp.starttls.enable=true
+mail.smtp.user=cambiar_por_tu_correo@gmail.com
+mail.smtp.password=cambiar_por_tu_clave_de_aplicacion

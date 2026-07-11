@@ -2,6 +2,8 @@ package vista;
 
 import java.awt.CardLayout;
 import java.awt.Component;
+import java.awt.Container;
+import java.awt.Cursor;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.WindowConstants;
@@ -44,11 +46,15 @@ public class FrmPrincipal extends JFrame {
         return vistaRegistro;
     }
 
+    // Evita la retención "fantasma" de datos entre sesiones: cada vez que se vuelve a login o
+    // registro se limpian campos y etiquetas de error antes de mostrar la pantalla.
     public void mostrarLogin() {
+        vistaLogin.limpiarFormulario();
         cardLayout.show(panelContenedor, CARD_LOGIN);
     }
 
     public void mostrarRegistro() {
+        vistaRegistro.limpiarCampos();
         cardLayout.show(panelContenedor, CARD_REGISTRO);
     }
 
@@ -76,5 +82,28 @@ public class FrmPrincipal extends JFrame {
     private void agregarCard(String nombre, JPanel panel) {
         panel.setName(nombre);
         panelContenedor.add(panel, nombre);
+    }
+
+    // Indicador de carga global: se invoca al arrancar cualquier SwingWorker de red/BD para que
+    // el usuario tenga feedback visual inmediato mientras la operación corre en background.
+    public void iniciarCarga() {
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        habilitarComponentes(panelContenedor, false);
+    }
+
+    public void finalizarCarga() {
+        setCursor(Cursor.getDefaultCursor());
+        habilitarComponentes(panelContenedor, true);
+    }
+
+    // JPanel.setEnabled() no deshabilita a sus hijos automáticamente en Swing, así que hay que
+    // recorrer el árbol de componentes a mano.
+    private static void habilitarComponentes(Container contenedor, boolean habilitado) {
+        for (Component c : contenedor.getComponents()) {
+            c.setEnabled(habilitado);
+            if (c instanceof Container) {
+                habilitarComponentes((Container) c, habilitado);
+            }
+        }
     }
 }
