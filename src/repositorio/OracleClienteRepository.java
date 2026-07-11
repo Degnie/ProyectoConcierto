@@ -11,6 +11,7 @@ import java.util.List;
 import modelo.Cliente;
 
 public class OracleClienteRepository implements ClienteRepository {
+    private static final int TIMEOUT_SEGUNDOS = 10;
 
     @Override
     public boolean save(Cliente cliente) {
@@ -27,6 +28,7 @@ public class OracleClienteRepository implements ClienteRepository {
                 + "VALUES (?, ?, ?, ?, ?, ?, 'CLIENTE', ?, ?)";
         try (Connection con = DatabaseConnection.getInstance().getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setQueryTimeout(TIMEOUT_SEGUNDOS);
             ps.setString(1, cliente.getDni());
             ps.setString(2, cliente.getNombres());
             ps.setString(3, cliente.getApellidos());
@@ -55,6 +57,7 @@ public class OracleClienteRepository implements ClienteRepository {
                 + "FROM usuarios WHERE dni = ? AND rol = 'CLIENTE'";
         try (Connection con = DatabaseConnection.getInstance().getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setQueryTimeout(TIMEOUT_SEGUNDOS);
             ps.setString(1, dni);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? mapear(rs) : null;
@@ -70,10 +73,12 @@ public class OracleClienteRepository implements ClienteRepository {
                 + "FROM usuarios WHERE rol = 'CLIENTE'";
         List<Cliente> resultado = new ArrayList<>();
         try (Connection con = DatabaseConnection.getInstance().getConnection();
-             PreparedStatement ps = con.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                resultado.add(mapear(rs));
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setQueryTimeout(TIMEOUT_SEGUNDOS);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    resultado.add(mapear(rs));
+                }
             }
             return resultado;
         } catch (SQLException e) {

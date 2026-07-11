@@ -45,13 +45,7 @@ public abstract class Persona {
         if (correo == null || !PATRON_CORREO.matcher(correo).matches()) {
             throw new CorreoInvalidoException("Correo inválido (ej. nombre@dominio.com).");
         }
-        if (fechaNacimiento == null) {
-            throw new EdadInvalidaException("La fecha de nacimiento es obligatoria.");
-        }
-        int edad = Period.between(fechaNacimiento, LocalDate.now()).getYears();
-        if (edad < EDAD_MINIMA) {
-            throw new EdadInvalidaException("Debe ser mayor de edad (18 años). Edad calculada: " + edad + ".");
-        }
+        validarMayoriaDeEdad(fechaNacimiento);
 
         this.id = UUID.randomUUID();
         this.nombres = nombres;
@@ -93,6 +87,19 @@ public abstract class Persona {
 
     public LocalDate getFechaNacimiento() {
         return fechaNacimiento;
+    }
+
+    // Extraído de ControladorRegistro: única fuente de verdad de la regla "mayor de edad", tanto
+    // para el chequeo en vivo del formulario (feedback rápido) como para la validación real que
+    // corre acá dentro del constructor (autoridad final, sin importar quién llame).
+    public static void validarMayoriaDeEdad(LocalDate fechaNacimiento) throws EdadInvalidaException {
+        if (fechaNacimiento == null) {
+            throw new EdadInvalidaException("La fecha de nacimiento es obligatoria.");
+        }
+        int edad = Period.between(fechaNacimiento, LocalDate.now()).getYears();
+        if (edad < EDAD_MINIMA) {
+            throw new EdadInvalidaException("Debe ser mayor de edad (18 años). Edad calculada: " + edad + ".");
+        }
     }
 
     // Un salt distinto por usuario evita que contraseñas iguales produzcan la misma derivación

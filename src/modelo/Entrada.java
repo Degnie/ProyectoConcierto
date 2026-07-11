@@ -23,6 +23,16 @@ public class Entrada {
         this.signedQrToken = null;
     }
 
+    // Reconstrucción desde Oracle con id/estado ya conocidos (historial de compras vía JOIN, ver
+    // OracleVentaRepository) — a diferencia del constructor de arriba, que siempre nace disponible.
+    public Entrada(UUID id, int numero, EstadoEntrada estado) {
+        this.id = id;
+        this.numero = numero;
+        this.estado = estado;
+        this.reservedUntil = null;
+        this.signedQrToken = null;
+    }
+
     public boolean vender() {
         boolean result = false;
         if (this.estado == EstadoEntrada.AVAILABLE || this.estado == EstadoEntrada.RESERVED) {
@@ -53,6 +63,14 @@ public class Entrada {
             result = true;
         }
         return result;
+    }
+
+    // Paquete-privado a propósito: solo Zona debe usarlo, y solo al reconstruir su estado desde
+    // Oracle en el arranque (ver Zona#marcarEntradaVendida). No es una venta real (no pasa por
+    // vender()); es forzar en memoria un hecho que la base de datos ya registró antes.
+    void marcarComoVendidaReconstruida(UUID idPersistido) {
+        this.id = idPersistido;
+        this.estado = EstadoEntrada.SOLD;
     }
 
     public UUID getId() {

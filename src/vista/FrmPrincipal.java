@@ -4,8 +4,11 @@ import java.awt.CardLayout;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Cursor;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 
 // Contenedor único (SPA): la navegación entre pantallas cambia de "card" en vez de
@@ -27,6 +30,12 @@ public class FrmPrincipal extends JFrame {
     // pero alcanzable desde el árbol de Swing, y nunca se libera.
     private JPanel cardClienteActual;
     private JPanel cardAdminActual;
+
+    // Estado de habilitado de cada componente justo antes de iniciarCarga(), para restaurarlo con
+    // fidelidad en finalizarCarga() — "efecto amnesia": sin esto, un componente que ya estaba
+    // deshabilitado por una regla de negocio (ej. chkAplicarPuntos sin puntos suficientes) volvía
+    // a quedar habilitado a la fuerza apenas terminaba cualquier operación de fondo.
+    private final Map<Component, Boolean> estadoPrevioComponentes = new IdentityHashMap<>();
 
     public FrmPrincipal() {
         setTitle("Sistema de Entradas");
@@ -54,15 +63,19 @@ public class FrmPrincipal extends JFrame {
     }
 
     // Evita la retención "fantasma" de datos entre sesiones: cada vez que se vuelve a login o
-    // registro se limpian campos y etiquetas de error antes de mostrar la pantalla.
+    // registro se limpian campos y etiquetas de error antes de mostrar la pantalla. Además, para
+    // que Enter/Tab funcionen de entrada (sin que el usuario tenga que hacer clic primero), el
+    // primer campo de texto pide el foco explícitamente una vez que la card ya es visible.
     public void mostrarLogin() {
         vistaLogin.limpiarFormulario();
         cardLayout.show(panelContenedor, CARD_LOGIN);
+        SwingUtilities.invokeLater(vistaLogin::enfocarPrimerCampo);
     }
 
     public void mostrarRegistro() {
         vistaRegistro.limpiarCampos();
         cardLayout.show(panelContenedor, CARD_REGISTRO);
+        SwingUtilities.invokeLater(vistaRegistro::enfocarPrimerCampo);
     }
 
     // FrmCliente/FrmAdministrador se recrean en cada login (llevan estado de sesión),
@@ -96,21 +109,32 @@ public class FrmPrincipal extends JFrame {
     // el usuario tenga feedback visual inmediato mientras la operación corre en background.
     public void iniciarCarga() {
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-        habilitarComponentes(panelContenedor, false);
+        estadoPrevioComponentes.clear();
+        guardarEstadoYDeshabilitar(panelContenedor);
     }
 
     public void finalizarCarga() {
         setCursor(Cursor.getDefaultCursor());
-        habilitarComponentes(panelContenedor, true);
+        restaurarEstadoPrevio(panelContenedor);
+        estadoPrevioComponentes.clear();
     }
 
-    // JPanel.setEnabled() no deshabilita a sus hijos automáticamente en Swing, así que hay que
-    // recorrer el árbol de componentes a mano.
-    private static void habilitarComponentes(Container contenedor, boolean habilitado) {
+    private void guardarEstadoYDeshabilitar(Container contenedor) {
         for (Component c : contenedor.getComponents()) {
-            c.setEnabled(habilitado);
+            estadoPrevioComponentes.put(c, c.isEnabled());
+            c.setEnabled(false);
             if (c instanceof Container) {
-                habilitarComponentes((Container) c, habilitado);
+                guardarEstadoYDeshabilitar((Container) c);
+            }
+        }
+    }
+
+    private void restaurarEstadoPrevio(Container contenedor) {
+        for (Component c : contenedor.getComponents()) {
+            Boolean previo = estadoPrevioComponentes.get(c);
+            c.setEnabled(previo == null || previo);
+            if (c instanceof Container) {
+                restaurarEstadoPrevio((Container) c);
             }
         }
     }

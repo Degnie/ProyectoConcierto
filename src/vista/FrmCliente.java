@@ -406,9 +406,12 @@ public javax.swing.JButton getBtnCerrarSesion() {
 // 5. Checkout con puntos de fidelidad
 public javax.swing.JCheckBox getChkAplicarPuntos() { return chkAplicarPuntos; }
 
-public void setCheckPuntosHabilitado(boolean habilitado, int puntosDisponibles) {
+public void setCheckPuntosHabilitado(boolean habilitado, int puntosDisponibles, String motivoSiDeshabilitado) {
     chkAplicarPuntos.setText("Aplicar puntos de fidelidad (Disponibles: " + puntosDisponibles + ")");
     chkAplicarPuntos.setEnabled(habilitado);
+    // Con el checkbox deshabilitado, el tooltip es la única forma de que el usuario sepa POR QUÉ
+    // (sin puntos vs. puntos insuficientes para esta compra puntual), en vez de un bloqueo mudo.
+    chkAplicarPuntos.setToolTipText(habilitado ? null : motivoSiDeshabilitado);
     if (!habilitado) {
         chkAplicarPuntos.setSelected(false);
     }
@@ -424,7 +427,7 @@ public void setResumenCompra(String textoDescuentoPuntos, String textoTotal) {
 }
 
 public void limpiarResumenCompra() {
-    setCheckPuntosHabilitado(false, 0);
+    setCheckPuntosHabilitado(false, 0, "Seleccione una zona y cantidad válidas primero.");
     lblDescuentoPuntos.setText(" ");
     lblTotal.setText("Total: —");
 }

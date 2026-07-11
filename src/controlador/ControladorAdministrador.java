@@ -9,10 +9,9 @@ import javax.swing.SwingWorker;
 import javax.swing.table.DefaultTableModel;
 import modelo.Concierto;
 import modelo.Zona;
-import modelo.Cliente;
-import modelo.Venta;
 import repositorio.ClienteRepository;
 import repositorio.ConciertoRepository;
+import repositorio.VentaRepository;
 import vista.FrmAdministrador;
 import vista.DlgNuevoConcierto;
 import vista.DlgEditarZona;
@@ -25,14 +24,17 @@ public class ControladorAdministrador implements ActionListener {
     private final ClienteRepository clienteRepository;
     private final java.util.ArrayList<Concierto> listaConciertos;
     private final ConciertoRepository conciertoRepository;
+    private final VentaRepository ventaRepository;
 
     public ControladorAdministrador(FrmPrincipal principal, FrmAdministrador vista, ClienteRepository clienteRepository,
-                                     java.util.ArrayList<Concierto> listaConciertos, ConciertoRepository conciertoRepository) {
+                                     java.util.ArrayList<Concierto> listaConciertos, ConciertoRepository conciertoRepository,
+                                     VentaRepository ventaRepository) {
         this.principal = principal;
         this.vista = vista;
         this.clienteRepository = clienteRepository;
         this.listaConciertos = listaConciertos;
         this.conciertoRepository = conciertoRepository;
+        this.ventaRepository = ventaRepository;
 
         this.vista.getBtnNuevoConcierto().addActionListener(this);
         this.vista.getBtnAgregarZona().addActionListener(this);
@@ -75,20 +77,12 @@ public class ControladorAdministrador implements ActionListener {
         vista.getTblZonas().revalidate();
         vista.getTblZonas().repaint();
 
+        // Lee directo de Oracle (JOIN, ver OracleVentaRepository.cargarResumenVentasParaAdmin):
+        // Cliente.getVentas() solo está hidratado para el cliente con sesión activa, no sirve acá.
         DefaultTableModel dtmVentas = new DefaultTableModel(new Object[]{"cliente", "zona", "monto", "concierto"}, 0);
-        if (clienteRepository != null) {
-            for (Cliente c : clienteRepository.findAll()) {
-                if (c != null && c.getVentas() != null) {
-                    for (Venta v : c.getVentas()) {
-                        String nombreConcierto = (v.getConciertoNombre() != null) ? v.getConciertoNombre() : "Evento";
-                        dtmVentas.addRow(new Object[]{
-                            c.getNombres() + " " + c.getApellidos(),
-                            v.getZona().getNombre(),
-                            v.getMonto(),
-                            nombreConcierto
-                        });
-                    }
-                }
+        if (ventaRepository != null) {
+            for (Object[] fila : ventaRepository.cargarResumenVentasParaAdmin()) {
+                dtmVentas.addRow(fila);
             }
         }
         vista.getTblVentas().setModel(dtmVentas);

@@ -18,6 +18,7 @@ public class FrmRegistroCliente extends javax.swing.JPanel {
         // Enter en el campo de contraseña dispara "Registrar" (no hace nada si el botón está
         // deshabilitado por validación pendiente, doClick() respeta setEnabled()).
         txtContrasena.addActionListener(ev -> btnRegistrar.doClick());
+        txtCodigoOtp.addActionListener(ev -> btnConfirmarCodigo.doClick());
     }
 
     /**
@@ -50,6 +51,10 @@ public class FrmRegistroCliente extends javax.swing.JPanel {
         lblErrorContrasena = new javax.swing.JLabel();
         lblErrorFecha = new javax.swing.JLabel();
         lblErrorCorreo = new javax.swing.JLabel();
+        lblInstruccionOtp = new javax.swing.JLabel();
+        txtCodigoOtp = new javax.swing.JTextField();
+        btnConfirmarCodigo = new javax.swing.JButton();
+        btnCancelarCodigo = new javax.swing.JButton();
 
         btnRegistrar.setText("Registrar");
         btnRegistrar.setEnabled(false);
@@ -74,6 +79,17 @@ public class FrmRegistroCliente extends javax.swing.JPanel {
             lblError.setForeground(java.awt.Color.RED);
             lblError.setFont(lblError.getFont().deriveFont(11f));
         }
+
+        // Paso de verificación OTP integrado en el mismo panel (paradigma SPA: nada de
+        // JOptionPane modal): arranca oculto, ControladorRegistro alterna la visibilidad con el
+        // formulario de datos vía mostrarPasoDatos()/mostrarPasoVerificacion().
+        lblInstruccionOtp.setText("Ingresa el código de 4 dígitos enviado a tu correo:");
+        lblInstruccionOtp.setVisible(false);
+        txtCodigoOtp.setVisible(false);
+        btnConfirmarCodigo.setText("Confirmar código");
+        btnConfirmarCodigo.setVisible(false);
+        btnCancelarCodigo.setText("Cancelar");
+        btnCancelarCodigo.setVisible(false);
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(this);
         this.setLayout(layout);
@@ -104,7 +120,13 @@ public class FrmRegistroCliente extends javax.swing.JPanel {
                     .addGroup(layout.createSequentialGroup()
                         .addComponent(btnRegistrar)
                         .addGap(81, 81, 81)
-                        .addComponent(btnRegresar)))
+                        .addComponent(btnRegresar))
+                    .addComponent(lblInstruccionOtp)
+                    .addComponent(txtCodigoOtp, javax.swing.GroupLayout.PREFERRED_SIZE, 150, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addGroup(layout.createSequentialGroup()
+                        .addComponent(btnConfirmarCodigo)
+                        .addGap(18, 18, 18)
+                        .addComponent(btnCancelarCodigo)))
                 .addContainerGap(40, Short.MAX_VALUE))
         );
         layout.setVerticalGroup(
@@ -146,6 +168,14 @@ public class FrmRegistroCliente extends javax.swing.JPanel {
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(btnRegistrar)
                     .addComponent(btnRegresar))
+                .addGap(18, 18, 18)
+                .addComponent(lblInstruccionOtp)
+                .addGap(10, 10, 10)
+                .addComponent(txtCodigoOtp, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(10, 10, 10)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(btnConfirmarCodigo)
+                    .addComponent(btnCancelarCodigo))
                 .addContainerGap(17, Short.MAX_VALUE))
         );
     }// </editor-fold>//GEN-END:initComponents
@@ -155,6 +185,8 @@ public class FrmRegistroCliente extends javax.swing.JPanel {
     }//GEN-LAST:event_btnRegresarActionPerformed
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
+    private javax.swing.JButton btnCancelarCodigo;
+    private javax.swing.JButton btnConfirmarCodigo;
     private javax.swing.JButton btnRegistrar;
     private javax.swing.JButton btnRegresar;
     private javax.swing.JLabel jLabel1;
@@ -170,7 +202,9 @@ public class FrmRegistroCliente extends javax.swing.JPanel {
     private javax.swing.JLabel lblErrorDni;
     private javax.swing.JLabel lblErrorFecha;
     private javax.swing.JLabel lblErrorNombres;
+    private javax.swing.JLabel lblInstruccionOtp;
     private javax.swing.JTextField txtApellidos;
+    private javax.swing.JTextField txtCodigoOtp;
     private javax.swing.JPasswordField txtContrasena;
     private javax.swing.JTextField txtCorreo;
     private javax.swing.JTextField txtDni;
@@ -208,6 +242,48 @@ public class FrmRegistroCliente extends javax.swing.JPanel {
         for (javax.swing.JLabel l : new javax.swing.JLabel[]{lblErrorDni, lblErrorNombres,
                 lblErrorApellidos, lblErrorContrasena, lblErrorFecha, lblErrorCorreo}) {
             l.setText(" ");
+        }
+        mostrarPasoDatos();
+    }
+
+    public void enfocarPrimerCampo() {
+        txtDni.requestFocusInWindow();
+    }
+
+    // ===================== Paso 2 del registro: código OTP integrado (sin JOptionPane modal) =====================
+
+    public javax.swing.JButton getBtnConfirmarCodigo() { return btnConfirmarCodigo; }
+    public javax.swing.JButton getBtnCancelarCodigo() { return btnCancelarCodigo; }
+    public String getCodigoIngresado() { return txtCodigoOtp.getText().trim(); }
+
+    // Intercambia visibilidad dentro del mismo panel: se ocultan los campos de datos y aparece el
+    // campo de código, respetando el paradigma SPA (nada de ventanas ni diálogos emergentes).
+    public void mostrarPasoVerificacion(String correoDestino) {
+        setVisibleCamposDatos(false);
+        lblInstruccionOtp.setText("Ingresa el código de 4 dígitos enviado a " + correoDestino + ":");
+        lblInstruccionOtp.setVisible(true);
+        txtCodigoOtp.setText("");
+        txtCodigoOtp.setVisible(true);
+        btnConfirmarCodigo.setVisible(true);
+        btnCancelarCodigo.setVisible(true);
+        txtCodigoOtp.requestFocusInWindow();
+    }
+
+    public void mostrarPasoDatos() {
+        lblInstruccionOtp.setVisible(false);
+        txtCodigoOtp.setVisible(false);
+        btnConfirmarCodigo.setVisible(false);
+        btnCancelarCodigo.setVisible(false);
+        setVisibleCamposDatos(true);
+    }
+
+    private void setVisibleCamposDatos(boolean visible) {
+        for (java.awt.Component c : new java.awt.Component[]{
+                txtDni, txtNombres, txtApellidos, txtContrasena, txtFechaNacimiento, txtCorreo,
+                jLabel1, jLabel2, jLabel3, jLabel4, jLabel6, jLabel7,
+                lblErrorDni, lblErrorNombres, lblErrorApellidos, lblErrorContrasena, lblErrorFecha, lblErrorCorreo,
+                btnRegistrar, btnRegresar}) {
+            c.setVisible(visible);
         }
     }
 }

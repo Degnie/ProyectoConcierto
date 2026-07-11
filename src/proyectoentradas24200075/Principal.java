@@ -14,9 +14,11 @@ import controlador.ControladorRegistro;
 import repositorio.ClienteRepository;
 import repositorio.ConciertoRepository;
 import repositorio.UsuarioRepository;
+import repositorio.VentaRepository;
 import repositorio.OracleClienteRepository;
 import repositorio.OracleConciertoRepository;
 import repositorio.OracleUsuarioRepository;
+import repositorio.OracleVentaRepository;
 
 public class Principal {
 
@@ -30,6 +32,7 @@ public class Principal {
     public static ClienteRepository clienteRepository = new OracleClienteRepository();
     public static ConciertoRepository conciertoRepository = new OracleConciertoRepository();
     public static UsuarioRepository usuarioRepository = new OracleUsuarioRepository();
+    public static VentaRepository ventaRepository = new OracleVentaRepository();
 
     public static void main(String[] args) {
         // Fail-fast: si falta config.properties o alguna clave crítica, se avisa y se aborta acá
@@ -45,7 +48,7 @@ public class Principal {
 
         FrmPrincipal principal = new FrmPrincipal();
         new ControladorRegistro(principal, clienteRepository);
-        new ControladorLogin(principal, clienteRepository, usuarioRepository, listaConciertos, conciertoRepository);
+        new ControladorLogin(principal, clienteRepository, usuarioRepository, listaConciertos, conciertoRepository, ventaRepository);
 
         principal.mostrarLogin();
         principal.setVisible(true);

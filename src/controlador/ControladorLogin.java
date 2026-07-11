@@ -13,6 +13,7 @@ import modelo.Persona;
 import repositorio.ClienteRepository;
 import repositorio.ConciertoRepository;
 import repositorio.UsuarioRepository;
+import repositorio.VentaRepository;
 import util.RegistradorErrores;
 import vista.FrmAdministrador;
 import vista.FrmCliente;
@@ -27,15 +28,18 @@ public class ControladorLogin implements ActionListener {
     private final UsuarioRepository usuarioRepository;
     private final ArrayList<Concierto> listaConciertos;
     private final ConciertoRepository conciertoRepository;
+    private final VentaRepository ventaRepository;
 
     public ControladorLogin(FrmPrincipal principal, ClienteRepository clienteRepository, UsuarioRepository usuarioRepository,
-                             ArrayList<Concierto> listaConciertos, ConciertoRepository conciertoRepository) {
+                             ArrayList<Concierto> listaConciertos, ConciertoRepository conciertoRepository,
+                             VentaRepository ventaRepository) {
         this.principal = principal;
         this.vista = principal.getVistaLogin();
         this.clienteRepository = clienteRepository;
         this.usuarioRepository = usuarioRepository;
         this.listaConciertos = listaConciertos;
         this.conciertoRepository = conciertoRepository;
+        this.ventaRepository = ventaRepository;
 
         this.vista.getBtnLoginCliente().addActionListener(this);
         this.vista.getBtnLoginAdmin().addActionListener(this);
@@ -82,7 +86,16 @@ public class ControladorLogin implements ActionListener {
                     if (encontrado == null) {
                         return null;
                     }
-                    return encontrado.ingresar(dni, contrasena) ? encontrado : null;
+                    boolean credencialesValidas = encontrado.ingresar(dni, contrasena);
+                    if (!credencialesValidas) {
+                        return null;
+                    }
+                    // Hidratación del historial (elimina la persistencia híbrida): sin esto, un
+                    // Cliente recién reconstruido por el repositorio arranca con "Mis Compras"
+                    // vacío aunque ya tenga ventas reales en Oracle. Corre acá, en el mismo hilo
+                    // de background que ya consulta la BD.
+                    encontrado.hidratarVentas(ventaRepository.cargarHistorialPorCliente(dni, listaConciertos));
+                    return encontrado;
                 } finally {
                     Arrays.fill(contrasena, '0');
                 }
@@ -97,7 +110,7 @@ public class ControladorLogin implements ActionListener {
                 if (clienteEncontrado != null) {
                     JOptionPane.showMessageDialog(vista, "¡Bienvenido " + clienteEncontrado.getNombres() + "!");
                     FrmCliente frmCliente = new FrmCliente();
-                    new ControladorCliente(principal, frmCliente, clienteEncontrado, clienteRepository, listaConciertos, conciertoRepository);
+                    new ControladorCliente(principal, frmCliente, clienteEncontrado, clienteRepository, listaConciertos, conciertoRepository, ventaRepository);
                     principal.mostrarCliente(frmCliente);
                 } else {
                     JOptionPane.showMessageDialog(vista, "DNI o contraseña incorrectos para Cliente.");
@@ -145,7 +158,7 @@ public class ControladorLogin implements ActionListener {
                 if (autenticado) {
                     JOptionPane.showMessageDialog(vista, "Acceso concedido como Administrador.");
                     FrmAdministrador frmAdmin = new FrmAdministrador();
-                    new ControladorAdministrador(principal, frmAdmin, clienteRepository, listaConciertos, conciertoRepository);
+                    new ControladorAdministrador(principal, frmAdmin, clienteRepository, listaConciertos, conciertoRepository, ventaRepository);
                     principal.mostrarAdministrador(frmAdmin);
                 } else {
                     JOptionPane.showMessageDialog(vista, "Credenciales de Administrador inválidas.");

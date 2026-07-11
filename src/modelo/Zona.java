@@ -1,31 +1,37 @@
 package modelo;
 
 import java.util.ArrayList;
+import java.util.UUID;
 
 public class Zona {
-    private java.util.UUID id;
+    private UUID id;
     private String nombre;
     private int capacidad;
     private int precio;
     private ArrayList<Entrada> entradas;
-    private int version; // Bloqueo Optimista (Optimistic Locking)
 
+    // Zona nueva (el admin la crea desde la UI): genera de una vez las `capacidad` entradas,
+    // todas disponibles. El bloqueo optimista real vive en la columna `version` de Oracle, no acá
+    // — mantener un contador en memoria era redundante y quedaba desincronizado entre instancias.
     public Zona(String nombre, int capacidad, int precio) {
-        this.id = java.util.UUID.randomUUID();
+        this(UUID.randomUUID(), nombre, capacidad, precio);
+        generarEntradas();
+    }
+
+    // Reconstrucción desde Oracle (ver OracleConciertoRepository): mismo id persistido, pero sin
+    // generar entradas todavía — el repositorio genera el set completo (todas disponibles) y luego
+    // llama a marcarEntradaVendida(...) por cada fila que ya constaba como vendida en la tabla
+    // `entradas`, para que el estado en memoria refleje exactamente lo que hay en la base.
+    public Zona(UUID id, String nombre, int capacidad, int precio) {
+        this.id = id;
         this.nombre = nombre;
         this.capacidad = capacidad;
         this.precio = precio;
         this.entradas = new ArrayList<>();
-        this.version = 0;
-        generarEntradas();
     }
 
-    public java.util.UUID getId() {
+    public UUID getId() {
         return id;
-    }
-
-    public int getVersion() {
-        return version;
     }
 
     public boolean generarEntradas() {
@@ -39,10 +45,21 @@ public class Zona {
         return result;
     }
 
+    // Usado solo durante la hidratación al arrancar: pone en SOLD (con el id ya persistido) la
+    // entrada de este número, para que no se vuelva a ofrecer como disponible tras un reinicio.
+    public void marcarEntradaVendida(int numero, UUID idPersistido) {
+        for (Entrada entrada : this.entradas) {
+            if (entrada.getNumero() == numero) {
+                entrada.marcarComoVendidaReconstruida(idPersistido);
+                return;
+            }
+        }
+    }
+
     public int getCantidadEntradasDisponibles() {
         int disponibles = 0;
         for (Entrada entrada : this.entradas) {
-            if (entrada.getEstado().equalsIgnoreCase("DISPONIBLE")) {
+            if (entrada.getEstadoEnum() == Entrada.EstadoEntrada.AVAILABLE) {
                 disponibles++;
             }
         }
@@ -62,9 +79,8 @@ public class Zona {
             throw new IllegalArgumentException("Se requiere un cliente para comprar una entrada.");
         }
         for (Entrada entrada : this.entradas) {
-            if (entrada.getEstado().equalsIgnoreCase("DISPONIBLE")) {
+            if (entrada.getEstadoEnum() == Entrada.EstadoEntrada.AVAILABLE) {
                 entrada.vender();
-                this.version++; // Simula la modificación transaccional y el control de versión para bloqueo optimista
                 return entrada;
             }
         }

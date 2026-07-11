@@ -16,6 +16,8 @@ import modelo.ZonaAgotadaException;
 import modelo.LimiteRedencionException;
 import repositorio.ClienteRepository;
 import repositorio.ConciertoRepository;
+import repositorio.VentaRepository;
+import util.RegistradorErrores;
 import vista.FrmCliente;
 import vista.FrmPrincipal;
 
@@ -29,16 +31,18 @@ public class ControladorCliente implements ActionListener {
     private final ClienteRepository clienteRepository;
     private final java.util.ArrayList<Concierto> listaConciertos;
     private final ConciertoRepository conciertoRepository;
+    private final VentaRepository ventaRepository;
 
     public ControladorCliente(FrmPrincipal principal, FrmCliente vista, Cliente clienteLogueado,
                                ClienteRepository clienteRepository, java.util.ArrayList<Concierto> listaConciertos,
-                               ConciertoRepository conciertoRepository) {
+                               ConciertoRepository conciertoRepository, VentaRepository ventaRepository) {
         this.principal = principal;
         this.vista = vista;
         this.clienteLogueado = clienteLogueado;
         this.clienteRepository = clienteRepository;
         this.listaConciertos = listaConciertos;
         this.conciertoRepository = conciertoRepository;
+        this.ventaRepository = ventaRepository;
 
         this.vista.getBtnRegistrarTarjeta().addActionListener(this);
         this.vista.getBtnComprarEntrada().addActionListener(this);
@@ -160,7 +164,11 @@ public class ControladorCliente implements ActionListener {
 
         // Si al recalcular ya no alcanza el tope (cambió cantidad/zona), se deshabilita y desmarca
         // solo; el usuario nunca ve un checkbox marcado prometiendo un descuento que ya no aplica.
-        vista.setCheckPuntosHabilitado(maxPuntosRedimibles > 0, clienteLogueado.getPuntos());
+        // El tooltip explica el motivo puntual, no solo "está deshabilitado".
+        String motivoDeshabilitado = clienteLogueado.getPuntos() <= 0
+            ? "Todavía no acumulaste puntos de fidelidad."
+            : "Tus puntos no alcanzan para esta compra (saldo insuficiente).";
+        vista.setCheckPuntosHabilitado(maxPuntosRedimibles > 0, clienteLogueado.getPuntos(), motivoDeshabilitado);
 
         boolean aplicarPuntos = vista.isAplicarPuntosSeleccionado() && maxPuntosRedimibles > 0;
         int puntosARedimir = aplicarPuntos ? maxPuntosRedimibles : 0;
@@ -172,17 +180,29 @@ public class ControladorCliente implements ActionListener {
         vista.setResumenCompra(textoDescuento, "Total: S/ " + total);
     }
 
-    // Toda escritura a la BD (cliente y/o concierto) corre fuera del EDT para no congelar la UI
-    private void guardarEnSegundoPlano(Runnable trabajoDeBd, Runnable alTerminar) {
+    // Toda escritura a la BD corre fuera del EDT para no congelar la UI; los errores de la
+    // transacción quedan registrados (System.err + error.log) además del diálogo al usuario.
+    private void guardarEnSegundoPlano(String contexto, Runnable trabajoDeBd, Runnable alTerminar) {
         new SwingWorker<Void, Void>() {
+            private Exception fallo;
+
             @Override
             protected Void doInBackground() {
-                trabajoDeBd.run();
+                try {
+                    trabajoDeBd.run();
+                } catch (Exception ex) {
+                    fallo = ex;
+                }
                 return null;
             }
 
             @Override
             protected void done() {
+                if (fallo != null) {
+                    RegistradorErrores.registrar(contexto, fallo);
+                    JOptionPane.showMessageDialog(vista, "Ocurrió un error al guardar en la base de datos: " + fallo.getMessage());
+                    return;
+                }
                 alTerminar.run();
             }
         }.execute();
@@ -285,25 +305,25 @@ public class ControladorCliente implements ActionListener {
         int puntosARedimir = vista.isAplicarPuntosSeleccionado() ? maxPuntosRedimibles : 0;
 
         // La reserva de asientos y el tope de redención de puntos son invariantes del modelo
-        // (Zona/Venta); el controlador solo traduce sus excepciones a un mensaje.
-        boolean compraExitosa;
+        // (Zona/Venta); el controlador solo traduce sus excepciones a un mensaje. comprar() ya
+        // reservó las entradas en memoria (synchronized) y devuelve la Venta lista para persistir.
+        Venta ventaCreada;
         try {
-            compraExitosa = clienteLogueado.comprar(zonaSel, cantidad, conciertoSel, puntosARedimir);
+            ventaCreada = clienteLogueado.comprar(zonaSel, cantidad, conciertoSel, puntosARedimir);
         } catch (ZonaAgotadaException | LimiteRedencionException ex) {
             JOptionPane.showMessageDialog(vista, ex.getMessage());
             return;
         }
 
-        if (compraExitosa) {
-            guardarEnSegundoPlano(() -> {
-                clienteRepository.save(clienteLogueado);
-                conciertoRepository.save(conciertoSel);
-            }, () -> {
-                JOptionPane.showMessageDialog(vista, "¡Compra efectuada con éxito!");
-                vista.setPuntosAcumulados(clienteLogueado.getPuntos());
-                actualizarTablaZonas();
-                actualizarTablaCompras();
-            });
+        if (ventaCreada != null) {
+            guardarEnSegundoPlano("ControladorCliente.procesarCompraEntrada",
+                () -> ventaRepository.guardarCompraCompleta(clienteLogueado, conciertoSel, ventaCreada),
+                () -> {
+                    JOptionPane.showMessageDialog(vista, "¡Compra efectuada con éxito!");
+                    vista.setPuntosAcumulados(clienteLogueado.getPuntos());
+                    actualizarTablaZonas();
+                    actualizarTablaCompras();
+                });
         } else {
             JOptionPane.showMessageDialog(vista, "No se pudo procesar la compra de entradas.");
         }
@@ -327,32 +347,19 @@ public class ControladorCliente implements ActionListener {
         try {
             Venta ventaALiberar = clienteLogueado.getVentas().get(filaSel);
             if (clienteLogueado.anularVenta(ventaALiberar)) {
-                Concierto conciertoDeVenta = buscarConciertoDeZona(ventaALiberar.getZona());
-                guardarEnSegundoPlano(() -> {
-                    clienteRepository.save(clienteLogueado);
-                    if (conciertoDeVenta != null) {
-                        conciertoRepository.save(conciertoDeVenta);
-                    }
-                }, () -> {
-                    JOptionPane.showMessageDialog(vista, "Operación de liberación procesada correctamente.");
-                    vista.setPuntosAcumulados(clienteLogueado.getPuntos());
-                    actualizarTablaZonas();
-                    actualizarTablaCompras();
-                });
+                guardarEnSegundoPlano("ControladorCliente.procesarLiberacionEntrada",
+                    () -> ventaRepository.anularVentaPersistida(clienteLogueado, ventaALiberar),
+                    () -> {
+                        JOptionPane.showMessageDialog(vista, "Operación de liberación procesada correctamente.");
+                        vista.setPuntosAcumulados(clienteLogueado.getPuntos());
+                        actualizarTablaZonas();
+                        actualizarTablaCompras();
+                    });
             } else {
                 JOptionPane.showMessageDialog(vista, "La venta ya se encuentra anulada.");
             }
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(vista, "No se pudo anular la venta.");
         }
-    }
-
-    private Concierto buscarConciertoDeZona(Zona zona) {
-        for (Concierto c : listaConciertos) {
-            if (c.getZonas().contains(zona)) {
-                return c;
-            }
-        }
-        return null;
     }
 }

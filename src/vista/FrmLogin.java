@@ -146,6 +146,12 @@ public class FrmLogin extends javax.swing.JPanel {
         txtContrasena.setText("");
     }
 
+    // Para que Enter/Tab funcionen desde el primer instante al volver a esta pantalla, sin que el
+    // usuario tenga que hacer clic en el campo primero.
+    public void enfocarPrimerCampo() {
+        txtDni.requestFocusInWindow();
+    }
+
     // Limpieza profunda al volver a esta pantalla: sin esto, el DNI/clave del usuario anterior
     // quedaría visible "fantasma" al navegar de vuelta al login vía CardLayout.
     public void limpiarFormulario() {

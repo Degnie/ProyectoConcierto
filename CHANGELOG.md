@@ -1,5 +1,57 @@
 # Changelog
 
+## [Sin publicar] - 2026-07-11 (iteración 7: transacciones ACID, N+1 y SPA sin modales)
+
+Elimina la persistencia híbrida: hasta esta iteración, `Cliente.ventas` solo vivía en memoria por
+sesión (un relogin arrancaba con "Mis Compras" vacío aunque hubiera compras reales) y el estado de
+entradas vendidas no sobrevivía un reinicio de la app. Ahora ventas y entradas se persisten en
+Oracle dentro de transacciones ACID manuales, con bloqueo optimista real en BD.
+
+### Cambios implementados
+
+**Esquema (`schema.sql`)**
+- `usuarios.correo` ahora `UNIQUE`.
+- Tabla `ventas` (id_venta, dni_cliente, id_concierto, id_zona, fecha_hora, monto_neto, puntos_redimidos, puntos_ganados, estado, payment_txn_id).
+- Tabla `entradas` (id_entrada, id_venta, id_zona, numero, estado) — **solo se persisten las entradas vendidas**, no todo el mapa de asientos: una zona de 25 000 con 40 vendidas tiene 40 filas, no 25 000.
+- `zonas.version NUMBER` para bloqueo optimista real en BD (reemplaza el `private int version` que vivía, sin ningún efecto real, en `Zona.java`).
+- Migración aplicada contra la base de desarrollo real: constraint UNIQUE, columna `version`, y ambas tablas nuevas creadas y verificadas.
+
+**Transacciones ACID (`VentaRepository`/`OracleVentaRepository`, nuevos)**
+- `guardarCompraCompleta(Cliente, Concierto, Venta)`: una sola transacción manual (`setAutoCommit(false)`) que hace `SELECT ... FOR UPDATE` de `zonas.version`, `UPDATE` condicionado a esa versión (si otra transacción concurrente la cambió, el `UPDATE` afecta 0 filas y se aborta como conflicto — sobreventa cortada a nivel de BD, no solo por el `synchronized` en memoria de `Zona`), `INSERT` de la venta, `INSERT` por lotes de las entradas, y `UPDATE` del saldo de puntos. Cualquier fallo dispara `rollback()` de todo el bloque.
+- `anularVentaPersistida(Cliente, Venta)`: transacción equivalente para la reversa (marca venta y entradas como `CANCELLED`, guarda el nuevo saldo de puntos).
+- Todo `PreparedStatement`, nuevo o existente (`OracleClienteRepository`, `OracleConciertoRepository`, `OracleUsuarioRepository`, `OracleVentaRepository`), ahora tiene `setQueryTimeout(10)` para no dejar hilos colgados si la red o la base se cuelgan.
+
+**Prevención de N+1 (`cargarHistorialPorCliente`)**
+- Un solo `JOIN` entre `ventas` y `entradas` (por `dni_cliente`) hidrata el historial completo de un cliente, en vez de una consulta de entradas por cada venta. Se llama justo después de un login exitoso, dentro del mismo hilo de background que ya consulta la BD (`ControladorLogin.loginCliente`), y reemplaza el `ArrayList` vacío del `Cliente` recién reconstruido vía `Cliente.hidratarVentas(...)` (nuevo).
+- Las entradas hidratadas reutilizan, cuando existen, la MISMA instancia que ya vive en la `Zona` compartida en memoria (`listaConciertos`) — así `anularVenta()` sobre una compra "vieja" (de una sesión anterior) libera el asiento real, no una copia desconectada.
+- El panel de administrador ya no lee `Cliente.getVentas()` (solo está hidratado para el cliente con sesión activa): `VentaRepository.cargarResumenVentasParaAdmin()` trae todas las ventas pagadas de todos los clientes en un `JOIN` (ventas+usuarios+zonas+conciertos), también de una sola pasada.
+
+**Modelo (`Zona`, `Entrada`, `Concierto`, `Persona`)**
+- `Zona`: se eliminó `private int version` (bloqueo optimista real y único en la columna de Oracle). Toda comparación de estado ahora usa `Entrada.EstadoEntrada` (enum) en vez de `entrada.getEstado().equalsIgnoreCase("DISPONIBLE")` (string).
+- `Zona`/`Entrada`: nuevos constructores/métodos de reconstrucción (`Zona(UUID, ...)`, `Entrada(UUID, int, EstadoEntrada)`, `Zona.marcarEntradaVendida(...)`) para que el estado de "vendida" sobreviva a un reinicio: al cargar, se generan las `capacidad` entradas disponibles de siempre y se marcan como vendidas, con su id real, exactamente las que constan en la tabla `entradas`.
+- **Bug preexistente corregido de paso**: `Concierto` generaba un `UUID.randomUUID()` nuevo cada vez que `findAll()` reconstruía la lista (no importaba mientras nada dependiera de ese id como foreign key). Con `ventas.id_concierto` como FK real, esto rompía la integridad referencial (`ORA-02291`) — se agregó `Concierto(UUID id, String nombre, Date fecha)` para reconstrucción con id estable, detectado y corregido durante las pruebas de integración de esta misma iteración.
+- `Persona`: `validarMayoriaDeEdad(LocalDate)` extraído a método estático público — antes existía duplicado (una copia privada en `ControladorRegistro`, y la misma regla otra vez inline en el constructor de `Persona`). Ahora hay una sola fuente de verdad; `ControladorRegistro` la llama para el chequeo en vivo del formulario.
+
+**SPA sin modales (`FrmRegistroCliente`, `ControladorRegistro`)**
+- Se eliminó el `JOptionPane.showInputDialog` que pedía el código OTP. En su lugar, `FrmRegistroCliente` tiene un paso de verificación integrado en el mismo panel (`lblInstruccionOtp`, `txtCodigoOtp`, `btnConfirmarCodigo`, `btnCancelarCodigo`, agregados en código Java plano dentro de `initComponents()`, sin tocar el `.form`): `mostrarPasoVerificacion(correo)` oculta los campos de datos y muestra el paso de código; `mostrarPasoDatos()` hace lo inverso. Enter en el campo de código dispara "Confirmar", igual que ya pasaba con la contraseña y "Registrar".
+
+**Corrección de "amnesia" y fuga de foco (`FrmPrincipal`)**
+- `iniciarCarga()`/`finalizarCarga()` ya no hacen `setEnabled(true)` ciego y recursivo al terminar: el estado de cada componente se guarda en un `IdentityHashMap` antes de deshabilitar, y se restaura con fidelidad. Un componente que ya estaba deshabilitado por una regla de negocio (ej. `chkAplicarPuntos` sin puntos suficientes) sigue deshabilitado después de una carga, en vez de reactivarse a la fuerza.
+- `mostrarLogin()`/`mostrarRegistro()` piden foco explícito (`requestFocusInWindow()`) para el primer campo de texto tras limpiar el formulario, así Enter/Tab funcionan sin que el usuario tenga que hacer clic primero.
+
+**Usabilidad del checkout (`FrmCliente`/`ControladorCliente`)**
+- Cuando `chkAplicarPuntos` se deshabilita, su `ToolTipText` explica el motivo puntual ("Todavía no acumulaste puntos de fidelidad" vs. "Tus puntos no alcanzan para esta compra") en vez de un bloqueo mudo.
+
+### Verificación
+
+- Prueba de integración completa contra Oracle real (no versionada): concierto+zona de prueba con capacidad 3; compra de 2 entradas vía `guardarCompraCompleta` (monto 190 con descuento VISA); tras un `findAll()` fresco (simulando reinicio) la zona muestra 1 disponible; tras "relogin" simulado (`Cliente` reconstruido + `hidratarVentas` vía el `JOIN`), el historial trae 1 venta con sus 2 entradas reales; la venta aparece en el resumen de administrador; `anularVentaPersistida` revierte todo — la zona vuelve a mostrar 3 disponibles.
+- Prueba de UI (fuera del repo): `iniciarCarga()`/`finalizarCarga()` preserva el estado `false` de un componente ya deshabilitado y restaura `true` en uno que sí estaba habilitado; el paso OTP oculta/muestra los componentes correctos al alternar.
+- Compilación completa del proyecto sin errores.
+
+### Recomendación rechazada en esta sesión
+
+- **Migrar la lectura de contraseñas de `config.properties` a variables de entorno del sistema operativo**: rechazado explícitamente. Motivo: necesidad operativa de compartir fácilmente el proyecto (código + configuración) entre computadoras de laboratorio en un entorno universitario, donde configurar variables de entorno por máquina es más fricción que copiar un archivo. `config.properties` se mantiene como texto plano, fuera de control de versiones (`.gitignore`).
+
 ## [Sin publicar] - 2026-07-11 (iteración 6: refactorización, criptografía y robustez)
 
 ### Cambios implementados

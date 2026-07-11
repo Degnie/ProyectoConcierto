@@ -61,16 +61,18 @@ public class Cliente extends Persona {
         return result;
     }
 
-    public boolean comprar(Zona zona, int cantidad, Concierto concierto) throws ZonaAgotadaException, LimiteRedencionException {
+    public Venta comprar(Zona zona, int cantidad, Concierto concierto) throws ZonaAgotadaException, LimiteRedencionException {
         return comprar(zona, cantidad, concierto, 0);
     }
 
     // puntosARedimir: canje de fidelidad (10 puntos = 1 sol de descuento), tope 50% del valor de
     // la compra validado dentro de Venta. La reserva de entradas y la venta se tratan como una
     // sola unidad: si algo falla a mitad de camino, se liberan las entradas ya reservadas.
-    public boolean comprar(Zona zona, int cantidad, Concierto concierto, int puntosARedimir)
+    // Devuelve la Venta creada (o null si no se pudo procesar) — el controlador la necesita para
+    // persistirla completa en Oracle (venta + entradas) en una sola transacción.
+    public Venta comprar(Zona zona, int cantidad, Concierto concierto, int puntosARedimir)
             throws ZonaAgotadaException, LimiteRedencionException {
-        boolean result = false;
+        Venta ventaCreada = null;
         if (this.tarjeta != null && cantidad >= 1 && cantidad <= 4
                 && puntosARedimir >= 0 && puntosARedimir <= this.puntos) {
             Entrada[] entradas = new Entrada[cantidad];
@@ -85,7 +87,7 @@ public class Cliente extends Persona {
                 Venta venta = new Venta(new Date(), montoBruto, zona, entradas, concierto.getNombre(), puntosARedimir);
                 this.ventas.add(venta);
                 this.puntos = this.puntos - venta.getPuntosRedimidos() + venta.getPuntosGanados();
-                result = true;
+                ventaCreada = venta;
             } catch (ZonaAgotadaException | LimiteRedencionException ex) {
                 for (int i = 0; i < reservadas; i++) {
                     entradas[i].liberar();
@@ -93,7 +95,17 @@ public class Cliente extends Persona {
                 throw ex;
             }
         }
-        return result;
+        return ventaCreada;
+    }
+
+    // Reemplaza el historial en memoria por el que se acaba de leer de Oracle (login). Sin esto,
+    // un Cliente recién reconstruido por el repositorio arrancaría con "Mis Compras" vacío aunque
+    // ya tuviera ventas reales — era justamente la persistencia híbrida que esta iteración elimina.
+    public void hidratarVentas(List<Venta> ventasPersistidas) {
+        this.ventas.clear();
+        if (ventasPersistidas != null) {
+            this.ventas.addAll(ventasPersistidas);
+        }
     }
 
     public int getPuntos() {

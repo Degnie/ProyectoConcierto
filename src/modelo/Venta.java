@@ -1,6 +1,7 @@
 package modelo;
 
 import java.util.Date;
+import java.util.UUID;
 
 public class Venta {
 
@@ -50,6 +51,33 @@ public class Venta {
         this.puntosRedimidos = puntosRedimidos;
         this.puntosGanados = this.monto / SOLES_POR_PUNTO_GANADO;
         this.aplicoPuntos = puntosRedimidos > 0;
+    }
+
+    private Venta() {
+        // Solo para reconstruirDesdeBaseDeDatos(...): una venta histórica ya pasó esta validación
+        // el día que se creó de verdad; releerla desde Oracle no debe volver a exigirla.
+    }
+
+    // Reconstruye en memoria una venta que Oracle ya tiene registrada (hidratación del historial
+    // del cliente, ver OracleVentaRepository). A propósito no pasa por el constructor público: no
+    // tiene sentido re-verificar el tope de redención de un hecho histórico ya consumado, y hacerlo
+    // introduciría una forma silenciosa de perder ventas viejas si la regla de negocio cambiara.
+    public static Venta reconstruirDesdeBaseDeDatos(UUID id, Date fecha, int monto, Zona zona, Entrada[] entradas,
+            String conciertoNombre, String paymentTransactionId, EstadoVenta estado,
+            int puntosRedimidos, int puntosGanados) {
+        Venta venta = new Venta();
+        venta.id = id;
+        venta.fecha = fecha;
+        venta.monto = monto;
+        venta.zona = zona;
+        venta.entradas = entradas;
+        venta.conciertoNombre = conciertoNombre;
+        venta.paymentTransactionId = paymentTransactionId;
+        venta.estado = estado;
+        venta.puntosRedimidos = puntosRedimidos;
+        venta.puntosGanados = puntosGanados;
+        venta.aplicoPuntos = puntosRedimidos > 0;
+        return venta;
     }
 
     // ===================== Calculadora reactiva (sin efectos secundarios, sin persistir nada) =====================

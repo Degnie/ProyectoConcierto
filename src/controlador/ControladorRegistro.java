@@ -7,7 +7,6 @@ import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.security.SecureRandom;
 import java.time.LocalDate;
-import java.time.Period;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
@@ -33,7 +32,8 @@ import vista.FrmRegistroCliente;
  * una cuota de envío SMTP en un registro que de todos modos va a fallar.
  * <p>
  * Fase 1 (correo): genera el código, lo envía por SMTP real vía {@link EmailService} en segundo
- * plano, y al terminar pide el código por diálogo en el EDT.
+ * plano, y al terminar muestra el paso de verificación integrado en el mismo panel (sin diálogos
+ * modales — paradigma SPA).
  * <p>
  * Fase 2 (persistencia): solo se dispara si el código ingresado es correcto; hashea la contraseña
  * y guarda el cliente en Oracle en segundo plano.
@@ -47,6 +47,10 @@ public class ControladorRegistro implements ActionListener {
     private final FrmRegistroCliente vista;
     private final ClienteRepository clienteRepository;
 
+    // Código generado en la Fase 1, pendiente de que el usuario lo confirme en el paso de
+    // verificación integrado (ver mostrarPasoVerificacion). Se limpia al cancelar o al concluir.
+    private String codigoPendiente;
+
     public ControladorRegistro(FrmPrincipal principal, ClienteRepository clienteRepository) {
         this.principal = principal;
         this.vista = principal.getVistaRegistro();
@@ -54,6 +58,8 @@ public class ControladorRegistro implements ActionListener {
 
         this.vista.getBtnRegistrar().addActionListener(this);
         this.vista.getBtnRegresar().addActionListener(this);
+        this.vista.getBtnConfirmarCodigo().addActionListener(this);
+        this.vista.getBtnCancelarCodigo().addActionListener(this);
 
         // Mientras el usuario escribe: solo se recalcula si "Registrar" debe habilitarse, sin
         // pintar ningún JLabel rojo (evita el feedback hostil de marcar error a mitad de tipeo).
@@ -119,7 +125,9 @@ public class ControladorRegistro implements ActionListener {
         String fechaTexto = vista.getFechaNacimiento();
         if (fechaTexto.isEmpty()) return null;
         try {
-            validarMayoriaDeEdad(LocalDate.parse(fechaTexto, FORMATO_FECHA));
+            // Persona.validarMayoriaDeEdad es la única fuente de verdad de esta regla (antes vivía
+            // duplicada acá y de nuevo dentro del constructor de Persona).
+            Persona.validarMayoriaDeEdad(LocalDate.parse(fechaTexto, FORMATO_FECHA));
             return null;
         } catch (DateTimeParseException ex) {
             return "Formato esperado: dd/MM/aaaa.";
@@ -185,6 +193,10 @@ public class ControladorRegistro implements ActionListener {
             iniciarFaseVerificacionDni();
         } else if (e.getSource() == vista.getBtnRegresar()) {
             regresarAlLogin();
+        } else if (e.getSource() == vista.getBtnConfirmarCodigo()) {
+            confirmarCodigo();
+        } else if (e.getSource() == vista.getBtnCancelarCodigo()) {
+            cancelarVerificacion();
         }
     }
 
@@ -254,31 +266,35 @@ public class ControladorRegistro implements ActionListener {
                         "No se pudo enviar el correo de verificación: " + causaRaiz(ex).getMessage());
                     return;
                 }
-                pedirCodigoYContinuar(codigo);
+                // Paso de verificación integrado en el mismo panel: reemplaza al antiguo
+                // JOptionPane.showInputDialog para no salir del paradigma SPA.
+                codigoPendiente = codigo;
+                vista.mostrarPasoVerificacion(correo);
             }
         }.execute();
     }
 
-    // Corre en el EDT (justo después de done() de la fase de correo): bloquea con un diálogo
-    // modal a propósito, es interacción de usuario, no I/O de red.
-    private void pedirCodigoYContinuar(String codigoEnviado) {
-        String intento = JOptionPane.showInputDialog(vista,
-            "Se envió un código de verificación a " + vista.getCorreo() + ". Ingréselo para continuar:");
-
+    // Corre en el EDT, disparado por btnConfirmarCodigo: es interacción de usuario sobre datos ya
+    // en memoria, no I/O de red, así que no necesita SwingWorker.
+    private void confirmarCodigo() {
         try {
-            validarCodigo(intento, codigoEnviado);
+            validarCodigo(vista.getCodigoIngresado(), codigoPendiente);
         } catch (CodigoVerificacionException ex) {
-            vista.getBtnRegistrar().setEnabled(true);
             JOptionPane.showMessageDialog(vista, ex.getMessage());
             return;
         }
-
         iniciarFasePersistencia();
     }
 
+    private void cancelarVerificacion() {
+        codigoPendiente = null;
+        vista.mostrarPasoDatos();
+        vista.getBtnRegistrar().setEnabled(true);
+    }
+
     private void validarCodigo(String intento, String codigoEnviado) throws CodigoVerificacionException {
-        if (intento == null || !intento.trim().equals(codigoEnviado)) {
-            throw new CodigoVerificacionException("Código de verificación incorrecto. Registro cancelado.");
+        if (intento == null || codigoEnviado == null || !intento.equals(codigoEnviado)) {
+            throw new CodigoVerificacionException("Código de verificación incorrecto.");
         }
     }
 
@@ -324,12 +340,14 @@ public class ControladorRegistro implements ActionListener {
             @Override
             protected void done() {
                 principal.finalizarCarga();
+                codigoPendiente = null;
                 vista.getBtnRegistrar().setEnabled(true);
                 boolean exito;
                 try {
                     exito = get();
                 } catch (Exception ex) {
                     RegistradorErrores.registrar("ControladorRegistro.fasePersistencia", ex);
+                    vista.mostrarPasoDatos();
                     JOptionPane.showMessageDialog(vista, "Error al registrar: " + causaRaiz(ex).getMessage());
                     return;
                 }
@@ -337,6 +355,7 @@ public class ControladorRegistro implements ActionListener {
                     JOptionPane.showMessageDialog(vista, "¡Cliente registrado con éxito!");
                     regresarAlLogin();
                 } else {
+                    vista.mostrarPasoDatos();
                     JOptionPane.showMessageDialog(vista, "El DNI ingresado ya se encuentra registrado.");
                 }
             }
@@ -349,13 +368,6 @@ public class ControladorRegistro implements ActionListener {
             actual = actual.getCause();
         }
         return actual;
-    }
-
-    private void validarMayoriaDeEdad(LocalDate fechaNacimiento) throws EdadInvalidaException {
-        int edad = Period.between(fechaNacimiento, LocalDate.now()).getYears();
-        if (edad < 18) {
-            throw new EdadInvalidaException("Debe ser mayor de edad (18 años). Edad calculada: " + edad + ".");
-        }
     }
 
     private void regresarAlLogin() {
