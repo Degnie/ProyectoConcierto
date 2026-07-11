@@ -12,6 +12,8 @@ import modelo.Venta;
 import modelo.Tarjeta;
 import modelo.TarjetaInvalidaException;
 import modelo.TipoTarjeta;
+import modelo.ZonaAgotadaException;
+import modelo.LimiteRedencionException;
 import repositorio.ClienteRepository;
 import repositorio.ConciertoRepository;
 import vista.FrmCliente;
@@ -210,7 +212,15 @@ public class ControladorCliente implements ActionListener {
                 return;
             }
 
-            boolean compraExitosa = clienteLogueado.comprar(zonaSel, cantidad, conciertoSel);
+            // La reserva de asientos y el tope de redención de puntos son invariantes del modelo
+            // (Zona/Venta); el controlador solo traduce sus excepciones a un mensaje.
+            boolean compraExitosa;
+            try {
+                compraExitosa = clienteLogueado.comprar(zonaSel, cantidad, conciertoSel);
+            } catch (ZonaAgotadaException | LimiteRedencionException ex) {
+                JOptionPane.showMessageDialog(vista, ex.getMessage());
+                return;
+            }
 
             if (compraExitosa) {
                 guardarEnSegundoPlano(() -> {

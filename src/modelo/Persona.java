@@ -4,11 +4,17 @@ import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.Arrays;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 public abstract class Persona {
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final Pattern PATRON_DNI = Pattern.compile("\\d{8}");
+    private static final Pattern PATRON_CORREO = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
+    private static final int EDAD_MINIMA = 18;
 
     private UUID id;
     private String nombres;
@@ -17,8 +23,29 @@ public abstract class Persona {
     private String contrasenaHash; // SHA-256(password + salt)
     private String salt;
     private String correo;
+    private LocalDate fechaNacimiento;
 
-    public Persona(String nombres, String apellidos, String dni, String contrasenaHash, String salt, String correo) {
+    // Invariantes de identidad blindadas acá: cualquier Persona (Cliente o Usuario) que llegue a
+    // existir en memoria ya es, por construcción, mayor de edad y tiene DNI/correo con formato
+    // válido. Los controladores pueden precalcular estas mismas reglas para dar feedback rápido
+    // en la UI, pero la autoridad real está acá, no ahí.
+    public Persona(String nombres, String apellidos, String dni, String contrasenaHash, String salt,
+                    String correo, LocalDate fechaNacimiento)
+            throws DniInvalidoException, CorreoInvalidoException, EdadInvalidaException {
+        if (dni == null || !PATRON_DNI.matcher(dni).matches()) {
+            throw new DniInvalidoException("El DNI debe tener 8 dígitos numéricos.");
+        }
+        if (correo == null || !PATRON_CORREO.matcher(correo).matches()) {
+            throw new CorreoInvalidoException("Correo inválido (ej. nombre@dominio.com).");
+        }
+        if (fechaNacimiento == null) {
+            throw new EdadInvalidaException("La fecha de nacimiento es obligatoria.");
+        }
+        int edad = Period.between(fechaNacimiento, LocalDate.now()).getYears();
+        if (edad < EDAD_MINIMA) {
+            throw new EdadInvalidaException("Debe ser mayor de edad (18 años). Edad calculada: " + edad + ".");
+        }
+
         this.id = UUID.randomUUID();
         this.nombres = nombres;
         this.apellidos = apellidos;
@@ -26,6 +53,7 @@ public abstract class Persona {
         this.contrasenaHash = contrasenaHash;
         this.salt = salt;
         this.correo = correo;
+        this.fechaNacimiento = fechaNacimiento;
     }
 
     public UUID getId() {
@@ -54,6 +82,10 @@ public abstract class Persona {
 
     public String getCorreo() {
         return correo;
+    }
+
+    public LocalDate getFechaNacimiento() {
+        return fechaNacimiento;
     }
 
     // Un salt distinto por usuario evita que contraseñas iguales produzcan el mismo hash (rainbow tables)

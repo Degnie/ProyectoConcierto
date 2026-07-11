@@ -289,12 +289,13 @@ public class ControladorRegistro implements ActionListener {
         String nombres = vista.getNombres();
         String apellidos = vista.getApellidos();
         String correo = vista.getCorreo();
+        LocalDate fechaNacimiento = LocalDate.parse(vista.getFechaNacimiento(), FORMATO_FECHA);
         char[] contrasena = vista.getContrasenaChars();
 
         principal.iniciarCarga();
         new SwingWorker<Boolean, Void>() {
             @Override
-            protected Boolean doInBackground() {
+            protected Boolean doInBackground() throws Exception {
                 // try/finally: la contraseña en claro se sobrescribe apenas se calcula el hash,
                 // incluso si Persona.hashPassword() lanzara una excepción inesperada. El resto de
                 // la persistencia (verificación de unicidad + guardado) ya no toca el arreglo.
@@ -313,7 +314,10 @@ public class ControladorRegistro implements ActionListener {
                 if (clienteRepository.findByDni(dni) != null) {
                     return false;
                 }
-                Cliente nuevoCliente = new Cliente(nombres, apellidos, dni, hash, salt, correo);
+                // El constructor de Cliente es la autoridad real: revalida DNI/correo/mayoría de
+                // edad y lanza sus propias excepciones de dominio si algo no cuadra, sin importar
+                // que el formulario ya haya pasado los chequeos "de cortesía" del controlador.
+                Cliente nuevoCliente = new Cliente(nombres, apellidos, dni, hash, salt, correo, fechaNacimiento);
                 return clienteRepository.save(nuevoCliente);
             }
 

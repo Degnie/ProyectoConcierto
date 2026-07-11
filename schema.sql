@@ -8,7 +8,8 @@ CREATE TABLE usuarios (
     contrasena_hash  VARCHAR2(64)  NOT NULL,
     salt             VARCHAR2(32)  NOT NULL,
     rol              VARCHAR2(10)  NOT NULL CHECK (rol IN ('ADMIN', 'CLIENTE')),
-    puntos           NUMBER        DEFAULT 0
+    puntos           NUMBER        DEFAULT 0,
+    fecha_nacimiento DATE          NOT NULL
 );
 
 CREATE TABLE conciertos (
@@ -28,5 +29,10 @@ CREATE TABLE zonas (
 -- No hay credenciales de administrador hardcodeadas en el código: cree la cuenta base a mano,
 -- con un salt propio y el hash SHA-256 de (password + salt) generado por Persona.hashPassword.
 -- Ejemplo (reemplace :hash y :salt por los valores reales calculados en Java):
--- INSERT INTO usuarios (dni, nombres, apellidos, correo, contrasena_hash, salt, rol, puntos)
--- VALUES ('admin', 'Admin', 'General', 'admin@proyecto.local', :hash, :salt, 'ADMIN', 0);
+-- INSERT INTO usuarios (dni, nombres, apellidos, correo, contrasena_hash, salt, rol, puntos, fecha_nacimiento)
+-- VALUES ('admin', 'Admin', 'General', 'admin@proyecto.local', :hash, :salt, 'ADMIN', 0, DATE '1990-01-01');
+
+-- Migración incremental (proyectos ya desplegados antes de esta columna):
+-- ALTER TABLE usuarios ADD fecha_nacimiento DATE;
+-- UPDATE usuarios SET fecha_nacimiento = DATE '1990-01-01' WHERE fecha_nacimiento IS NULL;
+-- ALTER TABLE usuarios MODIFY fecha_nacimiento NOT NULL;

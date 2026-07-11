@@ -53,26 +53,22 @@ public class Zona {
         return this.entradas.toArray(new Entrada[0]);
     }
 
-    public Entrada[] venderEntrada(int numero) {
-        this.version++; // Simula la modificación transaccional y el control de versión para bloqueo optimista
-        Entrada[] result = null;
-        ArrayList<Entrada> disponibles = new ArrayList<>();
+    // synchronized: la resta de capacidad y la generación de la Entrada son una sola operación
+    // atómica. Es la única puerta de entrada para vender un asiento; Cliente.comprar() la llama
+    // en un bucle para compras de varias entradas, revirtiendo (liberar()) lo ya vendido si una
+    // iteración posterior se queda sin cupo.
+    public synchronized Entrada comprarEntrada(Cliente cliente) throws ZonaAgotadaException {
+        if (cliente == null) {
+            throw new IllegalArgumentException("Se requiere un cliente para comprar una entrada.");
+        }
         for (Entrada entrada : this.entradas) {
             if (entrada.getEstado().equalsIgnoreCase("DISPONIBLE")) {
-                disponibles.add(entrada);
-            }
-            if (disponibles.size() == numero) {
-                break;
-            }
-        }
-        if (disponibles.size() == numero) {
-            result = new Entrada[numero];
-            for (int i = 0; i < numero; i++) {
-                disponibles.get(i).vender();
-                result[i] = disponibles.get(i);
+                entrada.vender();
+                this.version++; // Simula la modificación transaccional y el control de versión para bloqueo optimista
+                return entrada;
             }
         }
-        return result;
+        throw new ZonaAgotadaException("No quedan entradas disponibles en la zona \"" + nombre + "\".");
     }
 
     public String getNombre() {

@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import modelo.Cliente;
@@ -20,10 +21,10 @@ public class OracleClienteRepository implements ClienteRepository {
         // Sin esto, un registro de cliente con el DNI de un admin sobrescribiría su hash/salt.
         String sql = "MERGE INTO usuarios u USING (SELECT ? dni FROM dual) src ON (u.dni = src.dni) "
                 + "WHEN MATCHED THEN UPDATE SET nombres = ?, apellidos = ?, correo = ?, "
-                + "contrasena_hash = ?, salt = ?, puntos = ? "
+                + "contrasena_hash = ?, salt = ?, puntos = ?, fecha_nacimiento = ? "
                 + "WHERE u.rol = 'CLIENTE' "
-                + "WHEN NOT MATCHED THEN INSERT (dni, nombres, apellidos, correo, contrasena_hash, salt, rol, puntos) "
-                + "VALUES (?, ?, ?, ?, ?, ?, 'CLIENTE', ?)";
+                + "WHEN NOT MATCHED THEN INSERT (dni, nombres, apellidos, correo, contrasena_hash, salt, rol, puntos, fecha_nacimiento) "
+                + "VALUES (?, ?, ?, ?, ?, ?, 'CLIENTE', ?, ?)";
         try (Connection con = DatabaseConnection.getInstance().getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setString(1, cliente.getDni());
@@ -33,13 +34,15 @@ public class OracleClienteRepository implements ClienteRepository {
             ps.setString(5, cliente.getContrasenaHash());
             ps.setString(6, cliente.getSalt());
             ps.setInt(7, cliente.getPuntos());
-            ps.setString(8, cliente.getDni());
-            ps.setString(9, cliente.getNombres());
-            ps.setString(10, cliente.getApellidos());
-            ps.setString(11, cliente.getCorreo());
-            ps.setString(12, cliente.getContrasenaHash());
-            ps.setString(13, cliente.getSalt());
-            ps.setInt(14, cliente.getPuntos());
+            ps.setDate(8, java.sql.Date.valueOf(cliente.getFechaNacimiento()));
+            ps.setString(9, cliente.getDni());
+            ps.setString(10, cliente.getNombres());
+            ps.setString(11, cliente.getApellidos());
+            ps.setString(12, cliente.getCorreo());
+            ps.setString(13, cliente.getContrasenaHash());
+            ps.setString(14, cliente.getSalt());
+            ps.setInt(15, cliente.getPuntos());
+            ps.setDate(16, java.sql.Date.valueOf(cliente.getFechaNacimiento()));
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             throw new RuntimeException("Error al guardar cliente en la base de datos", e);
@@ -48,7 +51,7 @@ public class OracleClienteRepository implements ClienteRepository {
 
     @Override
     public Cliente findByDni(String dni) {
-        String sql = "SELECT dni, nombres, apellidos, correo, contrasena_hash, salt, puntos "
+        String sql = "SELECT dni, nombres, apellidos, correo, contrasena_hash, salt, puntos, fecha_nacimiento "
                 + "FROM usuarios WHERE dni = ? AND rol = 'CLIENTE'";
         try (Connection con = DatabaseConnection.getInstance().getConnection();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -63,7 +66,7 @@ public class OracleClienteRepository implements ClienteRepository {
 
     @Override
     public List<Cliente> findAll() {
-        String sql = "SELECT dni, nombres, apellidos, correo, contrasena_hash, salt, puntos "
+        String sql = "SELECT dni, nombres, apellidos, correo, contrasena_hash, salt, puntos, fecha_nacimiento "
                 + "FROM usuarios WHERE rol = 'CLIENTE'";
         List<Cliente> resultado = new ArrayList<>();
         try (Connection con = DatabaseConnection.getInstance().getConnection();
@@ -79,9 +82,18 @@ public class OracleClienteRepository implements ClienteRepository {
     }
 
     private Cliente mapear(ResultSet rs) throws SQLException {
-        Cliente cliente = new Cliente(rs.getString("nombres"), rs.getString("apellidos"),
-                rs.getString("dni"), rs.getString("contrasena_hash"), rs.getString("salt"), rs.getString("correo"));
-        cliente.setPuntos(rs.getInt("puntos"));
-        return cliente;
+        try {
+            LocalDate fechaNacimiento = rs.getDate("fecha_nacimiento").toLocalDate();
+            Cliente cliente = new Cliente(rs.getString("nombres"), rs.getString("apellidos"),
+                    rs.getString("dni"), rs.getString("contrasena_hash"), rs.getString("salt"),
+                    rs.getString("correo"), fechaNacimiento);
+            cliente.setPuntos(rs.getInt("puntos"));
+            return cliente;
+        } catch (Exception ex) {
+            // Los datos en Oracle ya pasaron esta validación al guardarse; si de todos modos
+            // fallara (fila corrupta o migrada a mano), es un error de integridad, no de negocio.
+            throw new RuntimeException("Registro de cliente inconsistente en la base de datos: dni="
+                    + rs.getString("dni") + " - " + ex.getMessage(), ex);
+        }
     }
 }

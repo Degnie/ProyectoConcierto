@@ -1,5 +1,57 @@
 # Changelog
 
+## [Sin publicar] - 2026-07-11 (iteración 4: modelo de dominio rico + puntos de fidelidad)
+
+Migra el proyecto de un modelo anémico (validaciones y reglas en los controladores) a un modelo de
+dominio rico: `Persona`, `Zona` y `Venta` ahora se protegen a sí mismas y lanzan sus propias
+excepciones. Agrega el sistema de puntos de fidelidad (acumulación + redención con tope del 50%) y
+elimina las estructuras globales de memoria detectadas como fuente de verdad duplicada.
+
+> Varios puntos de esta tarea (MERGE contra colisión de rol ADMIN, verificación de DNI antes del
+> SMTP, `try/finally` en la purga de `char[]`, remoción explícita de cards en `FrmPrincipal`,
+> errores de registro solo al perder foco) ya se habían implementado en la iteración 3 de este
+> mismo día. Se revisó el código y se confirma que siguen vigentes; no se duplicó trabajo.
+
+### Cambios implementados
+
+**Modelo de dominio rico (paquete `modelo/`)**
+- `Persona.java`: el constructor ahora exige `LocalDate fechaNacimiento` y valida ahí mismo, con autoridad final, DNI (8 dígitos), formato de correo y mayoría de edad (18 años) — lanza `DniInvalidoException`, `CorreoInvalidoException` o `EdadInvalidaException` (las dos primeras, nuevas). Antes esta validación solo existía como código suelto en `ControladorRegistro`; ahora es imposible construir una `Persona` inválida sin importar quién la instancie.
+- `Cliente.java` / `Usuario.java`: constructores actualizados para pasar `fechaNacimiento` a `Persona` y propagar sus excepciones.
+- `Zona.java`: nuevo método `public synchronized Entrada comprarEntrada(Cliente cliente) throws ZonaAgotadaException` — reserva y vende una entrada de forma atómica, o lanza `ZonaAgotadaException` (nueva) si no queda cupo. Reemplaza a `venderEntrada(int)`, que vendía un lote completo sin dar al modelo ningún punto de extensión por-entrada.
+- `Venta.java`: valida el tope de redención de puntos en el propio constructor (ver más abajo) — única fuente de verdad de esa regla, no se recalcula en ningún controlador.
+
+**Eliminación de contenedores de memoria globales redundantes**
+- Se eliminaron `modelo/EntradaArreglo.java` y `modelo/VentaArreglo.java`: no tenían ninguna referencia en el resto del código (confirmado por `grep` antes de borrar), eran una segunda fuente de verdad muerta que coexistía con las relaciones reales (`Zona.entradas`, `Cliente.ventas`) desde que se migró a Oracle. Esto es lo que el profesor marcó como violación de SSOT.
+
+**Sistema de puntos de fidelidad**
+- **Acumulación**: `puntosGanados = montoNeto / 10` (1 punto por cada 10 soles/dólares efectivamente pagados, calculado sobre el monto ya con el descuento por tarjeta y por puntos aplicado — no sobre el precio de lista). Se calcula y almacena dentro de `Venta`, no en `Cliente` ni en el controlador.
+- **Redención**: 10 puntos = 1 sol/dólar de descuento. `Cliente.comprar(Zona, int, Concierto, int puntosARedimir)` (sobrecarga nueva; la versión de 3 parámetros existente sigue funcionando y redime 0 puntos, así que `ControladorCliente` no tuvo que cambiar su llamada).
+- **Invariante de redención (tope 50%)**: validada dentro del constructor de `Venta`; si el descuento por puntos supera el 50% del monto bruto, lanza `LimiteRedencionException` (nueva) — un cliente jamás puede llevarse una entrada gratis. `Cliente.comprar(...)` revierte (libera) las entradas ya reservadas si la validación falla a mitad de camino.
+- `Cliente.anularVenta(...)` ahora revierte exactamente lo que la compra había hecho: resta los puntos ganados y devuelve los puntos redimidos, leyendo ambos valores de la propia `Venta` (no se recalculan).
+- **Nota de alcance**: no se agregó un control de UI (spinner/campo) para que el cliente elija cuántos puntos redimir — la tarea de esta iteración no lo pidió en `tareas_frontend`. El modelo ya soporta la funcionalidad completa; falta solo cablear un input en `FrmCliente` cuando se pida.
+
+**Persistencia (`OracleClienteRepository.java`, `schema.sql`)**
+- Se agregó la columna `fecha_nacimiento DATE NOT NULL` a la tabla `usuarios`. `schema.sql` se actualizó (CREATE TABLE nuevo + bloque de migración incremental `ALTER TABLE` para bases ya desplegadas).
+- **Aplicado contra la base de desarrollo real**: `ALTER TABLE usuarios ADD fecha_nacimiento DATE`, backfill de las 2 filas existentes (`admin` y el cliente de prueba) con `1990-01-01`, y luego `MODIFY fecha_nacimiento NOT NULL`. Verificado con una consulta posterior.
+- `save()`/`findByDni()`/`findAll()`/`mapear()` actualizados para persistir y reconstruir `fecha_nacimiento` (`java.sql.Date` ↔ `LocalDate`). La protección del `MERGE` contra colisión con cuentas `ADMIN` (`WHERE u.rol = 'CLIENTE'`) se mantiene sin cambios — ya estaba desde la iteración 3.
+
+**Controladores (ahora más delgados)**
+- `ControladorRegistro.java`: la Fase 2 de persistencia parsea la fecha del formulario y se la pasa al constructor de `Cliente`; si el constructor lanza una excepción de dominio (caso límite que el formulario no haya detectado), se muestra igual como mensaje de error — el controlador ya no es la única barrera.
+- `ControladorCliente.java`: el botón "Comprar" ahora captura `ZonaAgotadaException` y `LimiteRedencionException` alrededor de `clienteLogueado.comprar(...)` y muestra `ex.getMessage()` directamente — cero lógica de validación de negocio en el controlador, solo traducción a UI.
+
+### Verificación
+
+- Batería de pruebas de dominio (fuera del repositorio, no committeadas): rechazo de menor de edad, DNI y correo inválidos; `Zona.comprarEntrada` agotándose correctamente tras 2 ventas en una zona de capacidad 2; `Venta` rechazando una redención del 60% y aceptando una del 40%; flujo completo `Cliente.comprar(...)` con descuento por tarjeta VISA (5%) + puntos ganados (38 sobre una compra de 380) y `anularVenta(...)` revirtiendo puntos y liberando las 10 entradas de la zona a su capacidad original.
+- Round-trip contra Oracle real: `OracleClienteRepository.save()`/`findByDni()` con `fecha_nacimiento = 1995-03-20` guardada y releída sin pérdida.
+- Compilación completa del proyecto (65 clases) sin errores.
+
+### Recomendaciones arquitectónicas descartadas en esta sesión
+
+- **Delegar el cálculo de puntos al controlador**: se rechazó explícitamente — viola la cohesión orientada a objetos pedida en el curso y reabre la puerta a que dos controladores calculen la regla de forma distinta (ya pasó antes con `cantidad * 10` vs. el monto real). El cálculo vive únicamente en `Venta`.
+- **Triggers de Oracle para calcular/actualizar puntos en la base de datos**: se descartó por la misma razón, más el hecho de que el entorno debe permanecer JDBC clásico sin lógica de negocio escondida en la capa de persistencia — un trigger sería invisible para quien lee `Cliente.java`/`Venta.java` y rompería la trazabilidad del modelo Java como única fuente de verdad.
+- **Pool de conexiones / ORM**: reafirmado el rechazo ya registrado en la iteración 3 (ver bloque anterior); no se reevaluó porque no cambió el alcance pedido por el profesor.
+- **Nueva excepción unificada para todos los errores de validación de `Persona`** (en vez de `DniInvalidoException`/`CorreoInvalidoException`/`EdadInvalidaException` separadas): se prefirió mantener excepciones específicas por regla, consistente con el patrón ya establecido (`TarjetaInvalidaException`, `CodigoVerificacionException`) — permite que cada `catch` en la UI dé feedback preciso sin inspeccionar el mensaje.
+
 ## [Sin publicar] - 2026-07-11 (iteración 3: integridad de datos, orden de flujo y hardening)
 
 Auditoría posterior a la iteración 2, sobre el código ya con Oracle y SMTP real en producción de
