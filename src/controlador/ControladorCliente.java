@@ -45,6 +45,15 @@ public class ControladorCliente implements ActionListener {
         this.vista.getCmbConciertosCliente().addActionListener(this);
         this.vista.getCmbTipoTarjeta().addActionListener(this);
 
+        // Todo lo que sigue es cálculo puro en memoria (Venta.calcular...), así que se recalcula
+        // de forma síncrona en el EDT ante cualquier cambio de selección: no amerita SwingWorker,
+        // eso se reserva para la persistencia real en Oracle al confirmar la compra.
+        this.vista.getTblZonasDisponibles().getSelectionModel().addListSelectionListener(ev -> {
+            if (!ev.getValueIsAdjusting()) actualizarResumenCompra();
+        });
+        this.vista.getSpnCantidadEntradas().addChangeListener(ev -> actualizarResumenCompra());
+        this.vista.getChkAplicarPuntos().addItemListener(ev -> actualizarResumenCompra());
+
         inicializarFormulario();
         actualizarRequisitosTarjeta();
     }
@@ -58,6 +67,7 @@ public class ControladorCliente implements ActionListener {
 
     private void inicializarFormulario() {
         vista.setPuntosAcumulados(clienteLogueado.getPuntos());
+        vista.limpiarResumenCompra();
 
         vista.getCmbConciertosCliente().removeActionListener(this);
         vista.getCmbConciertosCliente().removeAllItems();
@@ -91,6 +101,7 @@ public class ControladorCliente implements ActionListener {
             }
         }
         vista.getTblZonasDisponibles().setModel(dtm);
+        actualizarResumenCompra();
     }
 
     private void actualizarTablaCompras() {
@@ -115,6 +126,46 @@ public class ControladorCliente implements ActionListener {
             }
         }
         vista.getTblMisCompras().setModel(dtm);
+    }
+
+    // Preview del checkout: sin tarjeta registrada o sin zona/concierto seleccionados no hay nada
+    // que mostrar. Con eso, calcula el descuento de tarjeta, el techo de puntos redimibles para
+    // esta compra puntual, y el total final según si el checkbox está marcado o no. Todo esto vive
+    // como fórmulas puras en Venta (calcularDescuentoTarjeta/calcularMaximoPuntosRedimibles/
+    // calcularTotalFinal) — acá solo se leen los datos de la UI y se pintan los resultados.
+    private void actualizarResumenCompra() {
+        Tarjeta tarjeta = clienteLogueado.getTarjeta();
+        int conIdx = vista.getCmbConciertosCliente().getSelectedIndex();
+        int zonIdx = vista.getTblZonasDisponibles().getSelectedRow();
+
+        if (tarjeta == null || conIdx < 0 || conIdx >= listaConciertos.size() || zonIdx < 0) {
+            vista.limpiarResumenCompra();
+            return;
+        }
+        Concierto conciertoSel = listaConciertos.get(conIdx);
+        if (zonIdx >= conciertoSel.getZonas().size()) {
+            vista.limpiarResumenCompra();
+            return;
+        }
+        Zona zonaSel = conciertoSel.getZonas().get(zonIdx);
+        int cantidad = vista.getCantidadEntradas();
+
+        double descuentoTarjeta = conciertoSel.getDescuento(tarjeta.getTipo());
+        int montoConDescuentoTarjeta = Venta.calcularMontoConDescuentoTarjeta(zonaSel.getPrecio(), cantidad, descuentoTarjeta);
+        int maxPuntosRedimibles = Venta.calcularMaximoPuntosRedimibles(montoConDescuentoTarjeta, clienteLogueado.getPuntos());
+
+        // Si al recalcular ya no alcanza el tope (cambió cantidad/zona), se deshabilita y desmarca
+        // solo; el usuario nunca ve un checkbox marcado prometiendo un descuento que ya no aplica.
+        vista.setCheckPuntosHabilitado(maxPuntosRedimibles > 0, clienteLogueado.getPuntos());
+
+        boolean aplicarPuntos = vista.isAplicarPuntosSeleccionado() && maxPuntosRedimibles > 0;
+        int puntosARedimir = aplicarPuntos ? maxPuntosRedimibles : 0;
+        int total = Venta.calcularTotalFinal(montoConDescuentoTarjeta, puntosARedimir, aplicarPuntos);
+
+        String textoDescuento = aplicarPuntos
+            ? "Descuento por puntos: -S/ " + Venta.calcularDescuentoPorPuntos(puntosARedimir) + " (" + puntosARedimir + " pts)"
+            : " ";
+        vista.setResumenCompra(textoDescuento, "Total: S/ " + total);
     }
 
     // Toda escritura a la BD (cliente y/o concierto) corre fuera del EDT para no congelar la UI
@@ -179,6 +230,7 @@ public class ControladorCliente implements ActionListener {
 
                 JOptionPane.showMessageDialog(vista, "Tarjeta " + tarjetaSegura.getTipo() + " tokenizada con éxito (Token: " + tokenPagoSimulado + ").");
                 vista.limpiarFormularioTarjeta();
+                actualizarResumenCompra();
             } catch (TarjetaInvalidaException ex) {
                 JOptionPane.showMessageDialog(vista, ex.getMessage());
             }
@@ -212,11 +264,18 @@ public class ControladorCliente implements ActionListener {
                 return;
             }
 
+            // Mismo cálculo que usó el preview reactivo (Venta.calcularMaximoPuntosRedimibles):
+            // si el checkbox está marcado se redime el máximo permitido para esta compra puntual.
+            double descuentoTarjeta = conciertoSel.getDescuento(clienteLogueado.getTarjeta().getTipo());
+            int montoConDescuentoTarjeta = Venta.calcularMontoConDescuentoTarjeta(zonaSel.getPrecio(), cantidad, descuentoTarjeta);
+            int maxPuntosRedimibles = Venta.calcularMaximoPuntosRedimibles(montoConDescuentoTarjeta, clienteLogueado.getPuntos());
+            int puntosARedimir = vista.isAplicarPuntosSeleccionado() ? maxPuntosRedimibles : 0;
+
             // La reserva de asientos y el tope de redención de puntos son invariantes del modelo
             // (Zona/Venta); el controlador solo traduce sus excepciones a un mensaje.
             boolean compraExitosa;
             try {
-                compraExitosa = clienteLogueado.comprar(zonaSel, cantidad, conciertoSel);
+                compraExitosa = clienteLogueado.comprar(zonaSel, cantidad, conciertoSel, puntosARedimir);
             } catch (ZonaAgotadaException | LimiteRedencionException ex) {
                 JOptionPane.showMessageDialog(vista, ex.getMessage());
                 return;

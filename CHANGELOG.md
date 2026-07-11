@@ -1,5 +1,44 @@
 # Changelog
 
+## [Sin publicar] - 2026-07-11 (iteración 5: checkout interactivo con puntos de fidelidad)
+
+Antes de tocar código se auditó el pedido contra el estado actual del repo. La mayor parte del
+backend de puntos/seguridad ya estaba resuelto en la iteración 4 (equivalencia 10 puntos = 1 sol,
+tope del 50% en `Venta`, `EntradaArreglo`/`VentaArreglo` eliminados, `MERGE` protegido contra
+colisión con `ADMIN`, `try/finally` en la purga de `char[]`, remoción explícita de cards en
+`FrmPrincipal`) — se dejó todo eso intacto, sin reescribir nada que ya funcionara. Lo nuevo real de
+esta iteración es la **interfaz de checkout reactiva**: hasta ahora el sistema de puntos existía
+en el modelo pero no había forma de usarlo desde la UI.
+
+### Cambios implementados
+
+**Calculadora reactiva en el modelo (`Venta.java`)**
+- Se agregaron métodos estáticos, sin efectos secundarios, para que la UI pueda previsualizar el total en caliente sin intentar una compra real: `calcularDescuentoTarjeta(...)`, `calcularMontoConDescuentoTarjeta(...)`, `calcularMaximoPuntosRedimibles(...)`, `calcularDescuentoPorPuntos(...)`, `calcularTotalFinal(...)`.
+- El constructor de `Venta` (la compra real) ahora llama a `calcularDescuentoPorPuntos(...)` en vez de reimplementar la división — el preview y la venta comprometida usan exactamente la misma fórmula, no pueden desincronizarse.
+- Nuevo campo `aplicoPuntos` (booleano, fijado una sola vez en el constructor a partir de `puntosRedimidos > 0`) con su getter `isAplicoPuntos()`, para dejar constancia en el propio registro de venta de si esa compra puntual usó canje de puntos.
+
+**Checkout interactivo (`FrmCliente.java`, código Java plano, sin editor visual)**
+- `JCheckBox chkAplicarPuntos`: etiqueta dinámica `"Aplicar puntos de fidelidad (Disponibles: X)"`; deshabilitado y desmarcado por defecto.
+- `JLabel lblDescuentoPuntos` / `JLabel lblTotal`: desglose del descuento por puntos y total a pagar.
+- Getters/setters nuevos: `getChkAplicarPuntos()`, `setCheckPuntosHabilitado(habilitado, puntosDisponibles)`, `isAplicarPuntosSeleccionado()`, `setResumenCompra(...)`, `limpiarResumenCompra()`, `getSpnCantidadEntradas()` (para poder engancharle un `ChangeListener` desde el controlador).
+
+**Reactividad (`ControladorCliente.java`)**
+- Se agregaron listeners a la selección de zona (`ListSelectionListener`), a la cantidad de entradas (`ChangeListener` del `JSpinner`) y al checkbox (`ItemListener`), todos disparando `actualizarResumenCompra()`.
+- `actualizarResumenCompra()` corre **síncrono en el EDT** (sin `SwingWorker`): lee tarjeta/zona/cantidad/puntos del cliente ya en memoria, llama a las calculadoras estáticas de `Venta`, habilita/deshabilita el checkbox según si `calcularMaximoPuntosRedimibles(...) > 0`, y pinta `lblDescuentoPuntos`/`lblTotal`. Si el cliente no tiene tarjeta registrada o no hay zona seleccionada, limpia el resumen.
+- Si cambia la cantidad o la zona y el tope de puntos redimibles cae a 0 con el checkbox ya marcado, se desmarca y deshabilita solo — nunca queda un checkbox marcado prometiendo un descuento que ya no aplica.
+- El botón "Comprar" ahora calcula los puntos a redimir con la misma fórmula que usó el preview (`calcularMaximoPuntosRedimibles`) y se los pasa a `Cliente.comprar(zona, cantidad, concierto, puntosARedimir)` — la sobrecarga que ya existía desde la iteración 4, no se tocó su firma.
+
+### Verificación
+
+- Prueba con reflexión sobre los `JLabel` privados de `FrmCliente` (fuera del repo, no committeada): con un cliente con 50 puntos, tarjeta VISA (5%) y una zona a S/ 200, el total antes de marcar el checkbox mostró "Total: S/ 190" (solo descuento de tarjeta); al marcarlo, "Total: S/ 185" y "Descuento por puntos: -S/ 5 (50 pts)" — coincide con el cálculo esperado a mano.
+- Compilación completa del proyecto sin errores tras los cambios.
+
+### Recomendaciones arquitectónicas descartadas en esta sesión
+
+- **Recalcular el total en un `SwingWorker`**: rechazado explícitamente por instrucción de esta iteración. El cálculo del preview es aritmética pura sobre datos ya en memoria (sin I/O), así que corre síncrono en el EDT; los hilos de fondo se reservan para la persistencia real en Oracle al confirmar la compra (`guardarEnSegundoPlano(...)`, sin cambios).
+- **Guardar `aplicoPuntos`/el estado del checkbox como parte del formulario o de `Cliente`**: se descartó — es un dato de una venta puntual, vive en `Venta` (ya persistida junto con `puntos_redimidos`... nota: por ahora `Venta` no se persiste en Oracle, sigue en memoria por sesión como en iteraciones previas; ver "Persistencia de Ventas/Entradas" en el bloque de decisiones pospuestas de la iteración 2).
+- **Editar `FrmCliente.form` para mantener el diseñador visual de NetBeans sincronizado**: los 3 componentes nuevos se agregaron con sentencias declarativas simples (sin bucles), pero por alcance de tiempo no se replicaron en el XML `.form`. Sigue el mismo criterio ya aceptado para `FrmRegistroCliente`/`FrmAdministrador`: compila y corre bien por Ant, pero el diseñador visual de NetBeans puede no reflejar estos 3 componentes hasta que alguien los agregue a mano en el `.form` o los reconstruya desde el editor gráfico.
+
 ## [Sin publicar] - 2026-07-11 (iteración 4: modelo de dominio rico + puntos de fidelidad)
 
 Migra el proyecto de un modelo anémico (validaciones y reglas en los controladores) a un modelo de

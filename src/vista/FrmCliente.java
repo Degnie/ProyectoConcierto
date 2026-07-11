@@ -57,6 +57,9 @@ public class FrmCliente extends javax.swing.JPanel {
         jLabel11 = new javax.swing.JLabel();
         btnCerrarSesion = new javax.swing.JButton();
         lblPuntos = new javax.swing.JLabel();
+        chkAplicarPuntos = new javax.swing.JCheckBox();
+        lblDescuentoPuntos = new javax.swing.JLabel();
+        lblTotal = new javax.swing.JLabel();
 
         jTable2.setModel(new javax.swing.table.DefaultTableModel(
             new Object [][] {
@@ -169,6 +172,12 @@ public class FrmCliente extends javax.swing.JPanel {
 
         lblPuntos.setText("0");
 
+        chkAplicarPuntos.setText("Aplicar puntos de fidelidad (Disponibles: 0)");
+        chkAplicarPuntos.setEnabled(false);
+
+        lblDescuentoPuntos.setText(" ");
+        lblTotal.setText("Total: —");
+
         javax.swing.GroupLayout jPanel1Layout = new javax.swing.GroupLayout(jPanel1);
         jPanel1.setLayout(jPanel1Layout);
         jPanel1Layout.setHorizontalGroup(
@@ -257,6 +266,14 @@ public class FrmCliente extends javax.swing.JPanel {
                     .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel1Layout.createSequentialGroup()
                         .addComponent(btnCerrarSesion)
                         .addGap(65, 65, 65))))
+            .addGroup(jPanel1Layout.createSequentialGroup()
+                .addGap(51, 51, 51)
+                .addComponent(chkAplicarPuntos))
+            .addGroup(jPanel1Layout.createSequentialGroup()
+                .addGap(51, 51, 51)
+                .addComponent(lblDescuentoPuntos)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                .addComponent(lblTotal))
         );
         jPanel1Layout.setVerticalGroup(
             jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
@@ -299,6 +316,12 @@ public class FrmCliente extends javax.swing.JPanel {
                 .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(jLabel8)
                     .addComponent(spnCantidadEntradas, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addGap(8, 8, 8)
+                .addComponent(chkAplicarPuntos)
+                .addGap(4, 4, 4)
+                .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(lblDescuentoPuntos)
+                    .addComponent(lblTotal))
                 .addGap(14, 14, 14)
                 .addComponent(btnComprarEntrada)
                 .addGap(17, 17, 17)
@@ -353,6 +376,8 @@ public int getCantidadEntradas() {
     return (int) spnCantidadEntradas.getValue();
 }
 
+public javax.swing.JSpinner getSpnCantidadEntradas() { return spnCantidadEntradas; }
+
 // 4. Setters útiles para que el Controlador modifique la pantalla desde fuera
 public void setPuntosAcumulados(int puntos) {
     lblPuntos.setText(String.valueOf(puntos));
@@ -364,14 +389,41 @@ public void limpiarFormularioTarjeta() {
     txtTarjCvv.setText("");
 }
     
-public javax.swing.JButton getBtnCerrarSesion() { 
-    return btnCerrarSesion; 
+public javax.swing.JButton getBtnCerrarSesion() {
+    return btnCerrarSesion;
+}
+
+// 5. Checkout con puntos de fidelidad
+public javax.swing.JCheckBox getChkAplicarPuntos() { return chkAplicarPuntos; }
+
+public void setCheckPuntosHabilitado(boolean habilitado, int puntosDisponibles) {
+    chkAplicarPuntos.setText("Aplicar puntos de fidelidad (Disponibles: " + puntosDisponibles + ")");
+    chkAplicarPuntos.setEnabled(habilitado);
+    if (!habilitado) {
+        chkAplicarPuntos.setSelected(false);
+    }
+}
+
+public boolean isAplicarPuntosSeleccionado() {
+    return chkAplicarPuntos.isSelected();
+}
+
+public void setResumenCompra(String textoDescuentoPuntos, String textoTotal) {
+    lblDescuentoPuntos.setText(textoDescuentoPuntos);
+    lblTotal.setText(textoTotal);
+}
+
+public void limpiarResumenCompra() {
+    setCheckPuntosHabilitado(false, 0);
+    lblDescuentoPuntos.setText(" ");
+    lblTotal.setText("Total: —");
 }
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JButton btnCerrarSesion;
     private javax.swing.JButton btnComprarEntrada;
     private javax.swing.JButton btnLiberarEntrada;
     private javax.swing.JButton btnRegistrarTarjeta;
+    private javax.swing.JCheckBox chkAplicarPuntos;
     private javax.swing.JComboBox<String> cmbConciertosCliente;
     private javax.swing.JComboBox<String> cmbTipoTarjeta;
     private javax.swing.JLabel jLabel1;
@@ -390,8 +442,10 @@ public javax.swing.JButton getBtnCerrarSesion() {
     private javax.swing.JScrollPane jScrollPane2;
     private javax.swing.JScrollPane jScrollPane3;
     private javax.swing.JTable jTable2;
+    private javax.swing.JLabel lblDescuentoPuntos;
     private javax.swing.JLabel lblPuntos;
     private javax.swing.JLabel lblRequisitosTarjeta;
+    private javax.swing.JLabel lblTotal;
     private javax.swing.JSpinner spnCantidadEntradas;
     private javax.swing.JTable tblMisCompras;
     private javax.swing.JTable tblZonasDisponibles;

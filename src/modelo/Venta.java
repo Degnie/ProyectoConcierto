@@ -22,6 +22,7 @@ public class Venta {
     private String paymentTransactionId;
     private int puntosRedimidos;
     private int puntosGanados;
+    private boolean aplicoPuntos;
 
     // montoBruto ya incluye el descuento por tipo de tarjeta (regla existente en Concierto), antes
     // de aplicar el canje de puntos. La validación del tope de redención vive acá: es la única
@@ -31,7 +32,7 @@ public class Venta {
         if (puntosRedimidos < 0) {
             throw new IllegalArgumentException("Los puntos a redimir no pueden ser negativos.");
         }
-        int montoDescuentoPuntos = puntosRedimidos / SOLES_POR_PUNTO_REDIMIDO;
+        int montoDescuentoPuntos = calcularDescuentoPorPuntos(puntosRedimidos);
         if (montoDescuentoPuntos > montoBruto * TOPE_REDENCION) {
             throw new LimiteRedencionException(
                 "El descuento por puntos no puede superar el " + (int) (TOPE_REDENCION * 100)
@@ -48,6 +49,47 @@ public class Venta {
         this.paymentTransactionId = "TXN_" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         this.puntosRedimidos = puntosRedimidos;
         this.puntosGanados = this.monto / SOLES_POR_PUNTO_GANADO;
+        this.aplicoPuntos = puntosRedimidos > 0;
+    }
+
+    // ===================== Calculadora reactiva (sin efectos secundarios, sin persistir nada) =====================
+    // Estos métodos son los que usa la UI de checkout para mostrar un preview en caliente del total
+    // a pagar mientras el cliente marca/desmarca "usar puntos", sin necesidad de intentar la compra
+    // real. El constructor de arriba usa exactamente las mismas fórmulas (calcularDescuentoPorPuntos),
+    // así que la regla del tope del 50% nunca puede quedar desincronizada entre el preview y la venta
+    // real.
+
+    // Descuento en soles/dólares que aporta el tipo de tarjeta sobre el precio de lista.
+    public static int calcularDescuentoTarjeta(int precioUnitario, int cantidad, double porcentajeDescuentoTarjeta) {
+        int precioLista = precioUnitario * cantidad;
+        return precioLista - calcularMontoConDescuentoTarjeta(precioUnitario, cantidad, porcentajeDescuentoTarjeta);
+    }
+
+    // Monto ya neto del descuento por tarjeta (antes de aplicar puntos) — es el "montoBruto" que
+    // recibe el constructor de Venta.
+    public static int calcularMontoConDescuentoTarjeta(int precioUnitario, int cantidad, double porcentajeDescuentoTarjeta) {
+        return (int) Math.round(precioUnitario * cantidad * (1 - porcentajeDescuentoTarjeta));
+    }
+
+    // Techo de puntos que el cliente puede aplicar a ESTA compra: el menor entre lo que tiene
+    // acumulado y lo que representa el 50% del monto ya con descuento de tarjeta.
+    public static int calcularMaximoPuntosRedimibles(int montoConDescuentoTarjeta, int puntosDisponiblesCliente) {
+        int topeMonetario = (int) (montoConDescuentoTarjeta * TOPE_REDENCION);
+        int puntosParaTope = topeMonetario * SOLES_POR_PUNTO_REDIMIDO;
+        return Math.max(0, Math.min(puntosDisponiblesCliente, puntosParaTope));
+    }
+
+    public static int calcularDescuentoPorPuntos(int puntosARedimir) {
+        return puntosARedimir / SOLES_POR_PUNTO_REDIMIDO;
+    }
+
+    // Total final a pagar: si aplicarPuntos es false, ignora puntosARedimir y devuelve el monto con
+    // solo el descuento de tarjeta (el mismo comportamiento que un checkbox desmarcado en la UI).
+    public static int calcularTotalFinal(int montoConDescuentoTarjeta, int puntosARedimir, boolean aplicarPuntos) {
+        if (!aplicarPuntos || puntosARedimir <= 0) {
+            return montoConDescuentoTarjeta;
+        }
+        return montoConDescuentoTarjeta - calcularDescuentoPorPuntos(puntosARedimir);
     }
 
     public boolean anular() {
@@ -104,5 +146,9 @@ public class Venta {
 
     public int getPuntosGanados() {
         return puntosGanados;
+    }
+
+    public boolean isAplicoPuntos() {
+        return aplicoPuntos;
     }
 }
