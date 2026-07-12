@@ -13,7 +13,7 @@ Sistema de venta de entradas para conciertos (proyecto de curso, NetBeans / Java
    | DINNERS           | 15%       |
    | AMERICAN EXPRESS  | 7%        |
 
-2. **Registro de cliente/usuario con verificación por correo**: al registrarse se debe enviar un código de 4 dígitos que el usuario debe validar para completar el registro.
+2. **Registro de cliente/usuario con verificación por correo**: al registrarse, enviamos un código de 4 dígitos que el usuario debe validar para completar el registro.
 
 3. **Validaciones con manejo de excepciones**, por ejemplo:
    - El cliente debe ser mayor de edad.
@@ -48,4 +48,4 @@ Sistema de venta de entradas para conciertos (proyecto de curso, NetBeans / Java
    - `jakarta.mail-api.jar` + una implementación (`angus-mail.jar`, o el clásico `javax.mail.jar` si se prefiere la API legada) — envío real de correo.
 5. Al ejecutar como `.jar` empaquetado, `config.properties` debe copiarse junto al `.jar` (no hace falta que el directorio de trabajo sea ese, `ConfiguracionApp` lo resuelve solo).
 
-> README provisional, se irá actualizando conforme avance el proyecto.
+> README provisional: lo iremos actualizando conforme avance el proyecto.
